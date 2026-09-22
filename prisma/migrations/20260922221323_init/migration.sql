@@ -1,6 +1,3 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateTable
 CREATE TABLE "archivos" (
     "id" SERIAL NOT NULL,
@@ -47,6 +44,7 @@ CREATE TABLE "categorias_negocio" (
     "permite_reservas" BOOLEAN DEFAULT false,
     "permite_habitaciones" BOOLEAN DEFAULT false,
     "permite_mesas" BOOLEAN DEFAULT false,
+    "permite_canchas" BOOLEAN DEFAULT false,
     "activo" BOOLEAN DEFAULT true,
     "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
 
@@ -70,10 +68,15 @@ CREATE TABLE "ciudades" (
     "nombre" VARCHAR(100) NOT NULL,
     "slug" VARCHAR(150),
     "descripcion" TEXT,
+    "historia" TEXT,
     "imagen_principal" VARCHAR(500),
     "latitud" DECIMAL(10,8),
     "longitud" DECIMAL(11,8),
+    "altitud" INTEGER,
+    "temperatura_min" INTEGER,
+    "temperatura_max" INTEGER,
     "poblacion" INTEGER,
+    "distincion" VARCHAR(200),
     "es_turistica" BOOLEAN DEFAULT false,
     "activo" BOOLEAN DEFAULT true,
     "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
@@ -133,9 +136,48 @@ CREATE TABLE "cupones_usuario" (
     "id" SERIAL NOT NULL,
     "cupon_id" INTEGER NOT NULL,
     "usuario_id" INTEGER NOT NULL,
+    "estado" VARCHAR(20) DEFAULT 'pendiente',
     "fecha_uso" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+    "fecha_canje" TIMESTAMP(6),
 
     CONSTRAINT "cupones_usuario_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "cartilla_config" (
+    "id" SERIAL NOT NULL,
+    "sucursal_id" INTEGER NOT NULL,
+    "titulo" VARCHAR(200) NOT NULL DEFAULT 'Cartilla de fidelización',
+    "descripcion" TEXT,
+    "sellos_requeridos" INTEGER NOT NULL DEFAULT 10,
+    "premio" VARCHAR(300) NOT NULL,
+    "activo" BOOLEAN DEFAULT true,
+    "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "cartilla_config_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "cartilla_cliente" (
+    "id" SERIAL NOT NULL,
+    "config_id" INTEGER NOT NULL,
+    "usuario_id" INTEGER NOT NULL,
+    "sellos" INTEGER NOT NULL DEFAULT 0,
+    "estado" VARCHAR(20) DEFAULT 'activa',
+    "fecha_completada" TIMESTAMP(6),
+    "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "cartilla_cliente_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "cartilla_sello" (
+    "id" SERIAL NOT NULL,
+    "cartilla_id" INTEGER NOT NULL,
+    "empleado_id" INTEGER,
+    "fecha" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "cartilla_sello_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -192,6 +234,15 @@ CREATE TABLE "evento_imagenes" (
 );
 
 -- CreateTable
+CREATE TABLE "evento_etiquetas" (
+    "id" SERIAL NOT NULL,
+    "evento_id" INTEGER NOT NULL,
+    "etiqueta_id" INTEGER NOT NULL,
+
+    CONSTRAINT "evento_etiquetas_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "eventos" (
     "id" SERIAL NOT NULL,
     "ciudad_id" INTEGER NOT NULL,
@@ -207,9 +258,20 @@ CREATE TABLE "eventos" (
     "precio_desde" DECIMAL(10,2),
     "capacidad" INTEGER,
     "destacado" BOOLEAN DEFAULT false,
+    "banner_principal" BOOLEAN DEFAULT false,
+    "banner_fecha_inicio" TIMESTAMP(6),
+    "banner_fecha_fin" TIMESTAMP(6),
     "activo" BOOLEAN DEFAULT true,
     "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
     "categoria_evento_id" INTEGER,
+    "instagram_url" VARCHAR(500),
+    "facebook_url" VARCHAR(500),
+    "tiktok_url" VARCHAR(500),
+    "tiketera_url" VARCHAR(500),
+    "tiketera_plataforma" VARCHAR(100),
+    "email_contacto" VARCHAR(250),
+    "whatsapp_contacto" VARCHAR(50),
+    "sitio_web" VARCHAR(500),
 
     CONSTRAINT "eventos_pkey" PRIMARY KEY ("id")
 );
@@ -268,6 +330,7 @@ CREATE TABLE "mesas" (
     "cantidad" INTEGER NOT NULL DEFAULT 1,
     "foto" VARCHAR(500),
     "activa" BOOLEAN DEFAULT true,
+    "qr_token" VARCHAR(100),
     "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "mesas_pkey" PRIMARY KEY ("id")
@@ -277,8 +340,10 @@ CREATE TABLE "mesas" (
 CREATE TABLE "notificaciones" (
     "id" SERIAL NOT NULL,
     "usuario_id" INTEGER NOT NULL,
+    "tipo" VARCHAR(50) DEFAULT 'general',
     "titulo" VARCHAR(200),
     "mensaje" TEXT,
+    "enlace" VARCHAR(500),
     "leido" BOOLEAN DEFAULT false,
     "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
 
@@ -297,6 +362,38 @@ CREATE TABLE "pagos" (
     "fecha_pago" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "pagos_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "pedido_detalle" (
+    "id" SERIAL NOT NULL,
+    "pedido_id" INTEGER NOT NULL,
+    "producto_id" INTEGER NOT NULL,
+    "cantidad" INTEGER NOT NULL DEFAULT 1,
+    "precio_unitario" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "nota" VARCHAR(300),
+    "estado" VARCHAR(30) DEFAULT 'pendiente',
+    "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "pedido_detalle_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "pedidos" (
+    "id" SERIAL NOT NULL,
+    "sucursal_id" INTEGER NOT NULL,
+    "mesa_id" INTEGER,
+    "reserva_id" INTEGER,
+    "usuario_id" INTEGER,
+    "cliente_nombre" VARCHAR(200),
+    "cliente_telefono" VARCHAR(30),
+    "estado" VARCHAR(30) DEFAULT 'pendiente',
+    "total" DECIMAL(10,2) DEFAULT 0,
+    "notas" TEXT,
+    "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+    "fecha_actualizacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "pedidos_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -321,6 +418,7 @@ CREATE TABLE "planes" (
     "permite_destacados" BOOLEAN DEFAULT false,
     "permite_cupones" BOOLEAN DEFAULT false,
     "permite_reservas" BOOLEAN DEFAULT false,
+    "permite_cartillas" BOOLEAN DEFAULT false,
     "dias_duracion" INTEGER,
     "destacado" BOOLEAN DEFAULT false,
     "activo" BOOLEAN DEFAULT true,
@@ -386,6 +484,7 @@ CREATE TABLE "publicidades" (
     "id" SERIAL NOT NULL,
     "empresa_id" INTEGER NOT NULL,
     "titulo" VARCHAR(250) NOT NULL,
+    "subtitulo" VARCHAR(300),
     "imagen" VARCHAR(500),
     "enlace" VARCHAR(500),
     "fecha_inicio" DATE,
@@ -441,6 +540,7 @@ CREATE TABLE "reservas" (
     "cliente_nombre" TEXT,
     "cliente_telefono" TEXT,
     "cliente_correo" TEXT,
+    "platos" TEXT,
 
     CONSTRAINT "reservas_pkey" PRIMARY KEY ("id")
 );
@@ -571,9 +671,14 @@ CREATE TABLE "sucursales" (
     "empresa_id" INTEGER NOT NULL,
     "ciudad_id" INTEGER NOT NULL,
     "nombre" VARCHAR(200) NOT NULL,
+    "descripcion" TEXT,
     "direccion" TEXT NOT NULL,
     "telefono" VARCHAR(30),
     "whatsapp" VARCHAR(30),
+    "facebook" VARCHAR(250),
+    "instagram" VARCHAR(250),
+    "tiktok" VARCHAR(250),
+    "sitio_web" VARCHAR(250),
     "imagen_principal" VARCHAR(500),
     "latitud" DECIMAL(10,8),
     "longitud" DECIMAL(11,8),
@@ -609,9 +714,23 @@ CREATE TABLE "reservas_visita" (
 );
 
 -- CreateTable
+CREATE TABLE "reservas_compartidas" (
+    "id" SERIAL NOT NULL,
+    "reserva_id" INTEGER NOT NULL,
+    "tipo_reserva" VARCHAR(20) NOT NULL,
+    "compartido_por_usuario_id" INTEGER NOT NULL,
+    "compartido_con_usuario_id" INTEGER NOT NULL,
+    "estado" VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+    "fecha_creacion" TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "reservas_compartidas_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "suscripciones" (
     "id" SERIAL NOT NULL,
-    "empresa_id" INTEGER NOT NULL,
+    "empresa_id" INTEGER,
+    "cedula" VARCHAR(20),
     "plan_id" INTEGER NOT NULL,
     "fecha_inicio" DATE NOT NULL,
     "fecha_fin" DATE NOT NULL,
@@ -831,6 +950,41 @@ CREATE TABLE "usuario_empresas" (
     CONSTRAINT "usuario_empresas_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "canchas" (
+    "id" SERIAL NOT NULL,
+    "sucursal_id" INTEGER NOT NULL,
+    "nombre" VARCHAR(100) NOT NULL,
+    "capacidad" INTEGER DEFAULT 2,
+    "precio_hora" DECIMAL(10,2) DEFAULT 0,
+    "tipo" VARCHAR(50) DEFAULT 'general',
+    "activa" BOOLEAN DEFAULT true,
+    "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "canchas_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "reservas_cancha" (
+    "id" SERIAL NOT NULL,
+    "cancha_id" INTEGER NOT NULL,
+    "sucursal_id" INTEGER NOT NULL,
+    "usuario_id" INTEGER,
+    "fecha_reserva" DATE NOT NULL,
+    "hora_inicio" TIME(6) NOT NULL,
+    "hora_fin" TIME(6) NOT NULL,
+    "duracion_horas" DECIMAL(3,1) DEFAULT 1,
+    "cantidad_jugadores" INTEGER,
+    "observaciones" TEXT,
+    "cliente_nombre" TEXT,
+    "cliente_telefono" TEXT,
+    "cliente_correo" TEXT,
+    "estado" VARCHAR(30) DEFAULT 'pendiente',
+    "fecha_creacion" TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "reservas_cancha_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "categorias_evento_nombre_key" ON "categorias_evento"("nombre");
 
@@ -841,6 +995,15 @@ CREATE UNIQUE INDEX "categorias_negocio_nombre_key" ON "categorias_negocio"("nom
 CREATE UNIQUE INDEX "ciudades_slug_key" ON "ciudades"("slug");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "cartilla_config_sucursal_id_key" ON "cartilla_config"("sucursal_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "evento_etiquetas_evento_id_etiqueta_id_key" ON "evento_etiquetas"("evento_id", "etiqueta_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "mesas_qr_token_key" ON "mesas"("qr_token");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "permisos_nombre_key" ON "permisos"("nombre");
 
 -- CreateIndex
@@ -848,6 +1011,9 @@ CREATE UNIQUE INDEX "provincias_nombre_key" ON "provincias"("nombre");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "roles_nombre_key" ON "roles"("nombre");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "reservas_compartidas_reserva_id_compartido_con_usuario_id_t_key" ON "reservas_compartidas"("reserva_id", "compartido_con_usuario_id", "tipo_reserva");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "tokens_recuperacion_token_key" ON "tokens_recuperacion"("token");
@@ -889,6 +1055,21 @@ ALTER TABLE "cupones_usuario" ADD CONSTRAINT "cupones_usuario_cupon_id_fkey" FOR
 ALTER TABLE "cupones_usuario" ADD CONSTRAINT "cupones_usuario_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
+ALTER TABLE "cartilla_config" ADD CONSTRAINT "cartilla_config_sucursal_id_fkey" FOREIGN KEY ("sucursal_id") REFERENCES "sucursales"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "cartilla_cliente" ADD CONSTRAINT "cartilla_cliente_config_id_fkey" FOREIGN KEY ("config_id") REFERENCES "cartilla_config"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "cartilla_cliente" ADD CONSTRAINT "cartilla_cliente_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "cartilla_sello" ADD CONSTRAINT "cartilla_sello_cartilla_id_fkey" FOREIGN KEY ("cartilla_id") REFERENCES "cartilla_cliente"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "cartilla_sello" ADD CONSTRAINT "cartilla_sello_empleado_id_fkey" FOREIGN KEY ("empleado_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
 ALTER TABLE "disponibilidad_sucursal" ADD CONSTRAINT "disponibilidad_sucursal_sucursal_id_fkey" FOREIGN KEY ("sucursal_id") REFERENCES "sucursales"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
@@ -896,6 +1077,12 @@ ALTER TABLE "empresas" ADD CONSTRAINT "fk_empresa_categoria" FOREIGN KEY ("categ
 
 -- AddForeignKey
 ALTER TABLE "evento_imagenes" ADD CONSTRAINT "evento_imagenes_evento_id_fkey" FOREIGN KEY ("evento_id") REFERENCES "eventos"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "evento_etiquetas" ADD CONSTRAINT "evento_etiquetas_evento_id_fkey" FOREIGN KEY ("evento_id") REFERENCES "eventos"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "evento_etiquetas" ADD CONSTRAINT "evento_etiquetas_etiqueta_id_fkey" FOREIGN KEY ("etiqueta_id") REFERENCES "etiquetas"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "eventos" ADD CONSTRAINT "fk_evento_categoria" FOREIGN KEY ("categoria_evento_id") REFERENCES "categorias_evento"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
@@ -929,6 +1116,24 @@ ALTER TABLE "pagos" ADD CONSTRAINT "fk_pago_empresa" FOREIGN KEY ("empresa_id") 
 
 -- AddForeignKey
 ALTER TABLE "pagos" ADD CONSTRAINT "fk_pago_suscripcion" FOREIGN KEY ("suscripcion_id") REFERENCES "suscripciones"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "pedido_detalle" ADD CONSTRAINT "pedido_detalle_pedido_id_fkey" FOREIGN KEY ("pedido_id") REFERENCES "pedidos"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "pedido_detalle" ADD CONSTRAINT "pedido_detalle_producto_id_fkey" FOREIGN KEY ("producto_id") REFERENCES "productos_servicios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "pedidos" ADD CONSTRAINT "pedidos_sucursal_id_fkey" FOREIGN KEY ("sucursal_id") REFERENCES "sucursales"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "pedidos" ADD CONSTRAINT "pedidos_mesa_id_fkey" FOREIGN KEY ("mesa_id") REFERENCES "mesas"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "pedidos" ADD CONSTRAINT "pedidos_reserva_id_fkey" FOREIGN KEY ("reserva_id") REFERENCES "reservas"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "pedidos" ADD CONSTRAINT "pedidos_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
 ALTER TABLE "producto_etiquetas" ADD CONSTRAINT "producto_etiquetas_etiqueta_id_fkey" FOREIGN KEY ("etiqueta_id") REFERENCES "etiquetas"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
@@ -1030,6 +1235,12 @@ ALTER TABLE "reservas_visita" ADD CONSTRAINT "reservas_visita_sucursal_id_fkey" 
 ALTER TABLE "reservas_visita" ADD CONSTRAINT "reservas_visita_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
+ALTER TABLE "reservas_compartidas" ADD CONSTRAINT "reservas_compartidas_compartido_por_usuario_id_fkey" FOREIGN KEY ("compartido_por_usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "reservas_compartidas" ADD CONSTRAINT "reservas_compartidas_compartido_con_usuario_id_fkey" FOREIGN KEY ("compartido_con_usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_empresa_id_fkey" FOREIGN KEY ("empresa_id") REFERENCES "empresas"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
 -- AddForeignKey
@@ -1112,3 +1323,15 @@ ALTER TABLE "usuario_empresas" ADD CONSTRAINT "fk_usuario_empresa_empresa" FOREI
 
 -- AddForeignKey
 ALTER TABLE "usuario_empresas" ADD CONSTRAINT "fk_usuario_empresa_usuario" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "canchas" ADD CONSTRAINT "canchas_sucursal_id_fkey" FOREIGN KEY ("sucursal_id") REFERENCES "sucursales"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "reservas_cancha" ADD CONSTRAINT "reservas_cancha_cancha_id_fkey" FOREIGN KEY ("cancha_id") REFERENCES "canchas"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "reservas_cancha" ADD CONSTRAINT "reservas_cancha_sucursal_id_fkey" FOREIGN KEY ("sucursal_id") REFERENCES "sucursales"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey
+ALTER TABLE "reservas_cancha" ADD CONSTRAINT "reservas_cancha_usuario_id_fkey" FOREIGN KEY ("usuario_id") REFERENCES "usuarios"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
