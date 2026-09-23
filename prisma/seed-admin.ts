@@ -17,6 +17,7 @@ const PERMISOS = [
   'habitaciones:ver', 'habitaciones:editar',
   'eventos:ver', 'eventos:editar',
   'cupones:ver', 'cupones:editar',
+  'marcas:ver', 'marcas:editar',
 ];
 
 async function main() {
@@ -99,6 +100,7 @@ async function main() {
       });
     }
   }
+  console.log(`${allPermisoIds.length} permisos asignados a superadmin.`);
 
   console.log('\n=== Creando usuario admin ===');
   const bcrypt = await import('bcryptjs');

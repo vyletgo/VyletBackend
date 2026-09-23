@@ -1,6 +1,15 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 
+export const health = async (_req: Request, res: Response) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, database: 'connected', timestamp: new Date().toISOString() });
+  } catch (e) {
+    res.status(503).json({ ok: false, database: 'disconnected', error: (e as Error).message, timestamp: new Date().toISOString() });
+  }
+};
+
 export const getGoogleMapsKey = async (_req: Request, res: Response) => {
   try {
     const config = await prisma.configuraciones.findFirst({

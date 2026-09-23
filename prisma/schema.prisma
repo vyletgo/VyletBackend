@@ -145,6 +145,7 @@ model cartilla_config {
   sellos_requeridos Int      @default(10)
   premio           String    @db.VarChar(300)
   activo           Boolean?  @default(true)
+  fecha_fin        DateTime? @db.Date
   fecha_creacion   DateTime? @default(now()) @db.Timestamp(6)
   sucursales       sucursales @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   cartilla_cliente cartilla_cliente[]
@@ -482,6 +483,15 @@ model publicidades {
   empresas               empresas                 @relation(fields: [empresa_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
+model marcas {
+  id             Int      @id @default(autoincrement())
+  nombre         String   @db.VarChar(200)
+  logo           String?  @db.VarChar(500)
+  activo         Boolean  @default(true)
+  orden          Int      @default(0)
+  fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
+}
+
 model recomendaciones {
   id                        Int                       @id @default(autoincrement())
   solicitud_id              Int
@@ -795,6 +805,8 @@ model usuarios {
   fecha_creacion            DateTime?                   @default(now()) @db.Timestamp(6)
   ultimo_acceso             DateTime?                   @db.Timestamp(6)
   rol_id                    Int?
+  intentos_fallidos         Int?                      @default(0)
+  bloqueado_hasta           DateTime?                 @db.Timestamp(6)
   auditoria                 auditoria[]
   cartilla_cliente          cartilla_cliente[]
   cartilla_sellos_dados     cartilla_sello[]
@@ -967,8 +979,10 @@ model canchas {
   nombre       String    @db.VarChar(100)
   capacidad    Int?      @default(2)
   precio_hora  Decimal?  @default(0) @db.Decimal(10, 2)
+  precio_2horas Decimal? @db.Decimal(10, 2)
   tipo         String?   @default("general") @db.VarChar(50)
   activa       Boolean?  @default(true)
+  foto         String?   @db.VarChar(500)
   fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
   sucursales   sucursales @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   reservas_cancha reservas_cancha[]
@@ -982,7 +996,7 @@ model reservas_cancha {
   fecha_reserva      DateTime   @db.Date
   hora_inicio        DateTime   @db.Time(6)
   hora_fin           DateTime   @db.Time(6)
-  duracion_horas     Decimal?   @default(1) @db.Decimal(3, 1)
+  duracion_horas     Int?      @default(1)
   cantidad_jugadores Int?
   observaciones      String?
   cliente_nombre     String?
