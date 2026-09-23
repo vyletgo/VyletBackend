@@ -73,6 +73,7 @@ export const ModelName = {
     productos_servicios: 'productos_servicios',
     provincias: 'provincias',
     publicidades: 'publicidades',
+    marcas: 'marcas',
     recomendaciones: 'recomendaciones',
     resenas: 'resenas',
     reservas: 'reservas',
@@ -83,7 +84,6 @@ export const ModelName = {
     solicitud_intereses: 'solicitud_intereses',
     solicitudes_recomendacion: 'solicitudes_recomendacion',
     solicitudes_dueno: 'solicitudes_dueno',
-    spatial_ref_sys: 'spatial_ref_sys',
     sucursal_etiquetas: 'sucursal_etiquetas',
     sucursal_imagenes: 'sucursal_imagenes',
     sucursal_servicios: 'sucursal_servicios',
@@ -240,6 +240,7 @@ export const Cartilla_configScalarFieldEnum = {
     sellos_requeridos: 'sellos_requeridos',
     premio: 'premio',
     activo: 'activo',
+    fecha_fin: 'fecha_fin',
     fecha_creacion: 'fecha_creacion'
 };
 export const Cartilla_clienteScalarFieldEnum = {
@@ -490,6 +491,14 @@ export const PublicidadesScalarFieldEnum = {
     estado: 'estado',
     presupuesto: 'presupuesto'
 };
+export const MarcasScalarFieldEnum = {
+    id: 'id',
+    nombre: 'nombre',
+    logo: 'logo',
+    activo: 'activo',
+    orden: 'orden',
+    fecha_creacion: 'fecha_creacion'
+};
 export const RecomendacionesScalarFieldEnum = {
     id: 'id',
     solicitud_id: 'solicitud_id',
@@ -574,13 +583,6 @@ export const Solicitudes_duenoScalarFieldEnum = {
     fecha_creacion: 'fecha_creacion',
     fecha_respuesta: 'fecha_respuesta',
     atendido_por: 'atendido_por'
-};
-export const Spatial_ref_sysScalarFieldEnum = {
-    srid: 'srid',
-    auth_name: 'auth_name',
-    auth_srid: 'auth_srid',
-    srtext: 'srtext',
-    proj4text: 'proj4text'
 };
 export const Sucursal_etiquetasScalarFieldEnum = {
     id: 'id',
@@ -708,7 +710,9 @@ export const UsuariosScalarFieldEnum = {
     correo_verificado: 'correo_verificado',
     fecha_creacion: 'fecha_creacion',
     ultimo_acceso: 'ultimo_acceso',
-    rol_id: 'rol_id'
+    rol_id: 'rol_id',
+    intentos_fallidos: 'intentos_fallidos',
+    bloqueado_hasta: 'bloqueado_hasta'
 };
 export const Planes_viajeScalarFieldEnum = {
     id: 'id',
@@ -804,8 +808,10 @@ export const CanchasScalarFieldEnum = {
     nombre: 'nombre',
     capacidad: 'capacidad',
     precio_hora: 'precio_hora',
+    precio_2horas: 'precio_2horas',
     tipo: 'tipo',
     activa: 'activa',
+    foto: 'foto',
     fecha_creacion: 'fecha_creacion'
 };
 export const Reservas_canchaScalarFieldEnum = {
