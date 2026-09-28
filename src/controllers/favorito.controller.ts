@@ -13,6 +13,11 @@ export const listarMios = async (req: Request, res: Response) => {
             ciudades: { select: { id: true, nombre: true } },
             empresas: { select: { id: true, nombre: true } }
           }
+        },
+        eventos: {
+          include: {
+            ciudades: { select: { id: true, nombre: true } }
+          }
         }
       }
     });
@@ -67,6 +72,54 @@ export const quitar = async (req: Request, res: Response) => {
     res.json({ es_favorito: false });
   } catch (error) {
     console.error('Error quitando favorito:', error);
+    res.status(500).json({ error: 'Error al quitar favorito' });
+  }
+};
+
+// GET /api/eventos/:id/favorito  (cliente autenticado) -> { es_favorito }
+export const estadoEvento = async (req: Request, res: Response) => {
+  try {
+    const eventoId = Number(req.params.id);
+    const fav = await prisma.favoritos.findFirst({
+      where: { evento_id: eventoId, usuario_id: req.user.id }
+    });
+    res.json({ es_favorito: Boolean(fav) });
+  } catch (error) {
+    console.error('Error consultando favorito de evento:', error);
+    res.status(500).json({ error: 'Error al consultar favorito' });
+  }
+};
+
+// POST /api/eventos/:id/favorito  (cliente autenticado)
+export const agregarEvento = async (req: Request, res: Response) => {
+  try {
+    const eventoId = Number(req.params.id);
+    const evento = await prisma.eventos.findFirst({ where: { id: eventoId, activo: true } });
+    if (!evento) return res.status(404).json({ error: 'Evento no encontrado' });
+
+    const existente = await prisma.favoritos.findFirst({
+      where: { evento_id: eventoId, usuario_id: req.user.id }
+    });
+    if (!existente) {
+      await prisma.favoritos.create({ data: { evento_id: eventoId, usuario_id: req.user.id } });
+    }
+    res.json({ es_favorito: true });
+  } catch (error) {
+    console.error('Error agregando favorito de evento:', error);
+    res.status(500).json({ error: 'Error al agregar favorito' });
+  }
+};
+
+// DELETE /api/eventos/:id/favorito  (cliente autenticado)
+export const quitarEvento = async (req: Request, res: Response) => {
+  try {
+    const eventoId = Number(req.params.id);
+    await prisma.favoritos.deleteMany({
+      where: { evento_id: eventoId, usuario_id: req.user.id }
+    });
+    res.json({ es_favorito: false });
+  } catch (error) {
+    console.error('Error quitando favorito de evento:', error);
     res.status(500).json({ error: 'Error al quitar favorito' });
   }
 };

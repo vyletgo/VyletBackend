@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as usuarioController from '../controllers/usuario.controller.js';
 import * as habitacionController from '../controllers/habitacion.controller.js';
+import * as visitaController from '../controllers/visita.controller.js';
 import * as compartidaController from '../controllers/reserva-compartida.controller.js';
 import { authenticate, requirePermiso } from '../middlewares/auth.js';
 
@@ -8,6 +9,9 @@ const router = Router();
 
 // Mis reservas de habitación (ANTES de /:id para evitar conflicto)
 router.get('/mis-reservas-habitacion', authenticate, habitacionController.misReservasHabitacion);
+
+// Mis reservas de visita (ANTES de /:id para evitar conflicto)
+router.get('/mis-reservas-visita', authenticate, visitaController.misReservasVisita);
 
 // Búsqueda de usuarios para compartir (ANTES de /:id para evitar conflicto)
 router.get('/buscar', authenticate, compartidaController.buscarUsuarios);

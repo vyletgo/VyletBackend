@@ -1,0 +1,47 @@
+$ tsx watch src/index.ts
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+🔌 WebSocket server inicializado
+🧹 Cron de limpieza de notificaciones activo (3:00 AM diario, >30 días)
+🚀 Servidor corriendo en http://localhost:3000
+📡 Base de datos conectada con Prisma
+🔐 Rutas de autenticación disponibles en /api/auth
+🔌 WebSocket activo en ws://localhost:3000
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+12:42:54 p. m. [tsx] change in ./src\controllers\reserva.controller.ts Restarting...
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+🔌 WebSocket server inicializado
+🧹 Cron de limpieza de notificaciones activo (3:00 AM diario, >30 días)
+🚀 Servidor corriendo en http://localhost:3000
+📡 Base de datos conectada con Prisma
+🔐 Rutas de autenticación disponibles en /api/auth
+🔌 WebSocket activo en ws://localhost:3000
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket conectado: usuario 7
+🔌 WebSocket desconectado: usuario 7
+🔌 WebSocket desconectado: usuario 7

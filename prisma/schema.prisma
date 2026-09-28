@@ -270,14 +270,17 @@ model eventos {
   categorias_evento   categorias_evento?   @relation(fields: [categoria_evento_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_evento_categoria")
   ciudades            ciudades             @relation(fields: [ciudad_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_evento_ciudad")
   plan_viaje_eventos  plan_viaje_eventos[]
+  favoritos            favoritos[]
 }
 
 model favoritos {
   id             Int        @id @default(autoincrement())
   usuario_id     Int
-  sucursal_id    Int
+  sucursal_id    Int?
+  evento_id      Int?
   fecha_creacion DateTime?  @default(now()) @db.Timestamp(6)
-  sucursales     sucursales @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_favorito_sucursal")
+  sucursales     sucursales? @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_favorito_sucursal")
+  eventos        eventos?    @relation(fields: [evento_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_favorito_evento")
   usuarios       usuarios   @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_favorito_usuario")
 }
 
@@ -447,8 +450,9 @@ model productos_servicios {
   producto_etiquetas    producto_etiquetas[]
   producto_imagenes     producto_imagenes[]
   pedido_detalle        pedido_detalle[]
-  categorias_producto   categorias_producto? @relation(fields: [categoria_producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_producto_categoria")
-  sucursales            sucursales           @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_producto_sucursal")
+  categorias_producto   categorias_producto?      @relation(fields: [categoria_producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_producto_categoria")
+  sucursales            sucursales                @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_producto_sucursal")
+  intereses_plan        intereses_plan[]
 }
 
 model provincias {
@@ -695,6 +699,7 @@ model sucursales {
   plan_viaje_sucursales   plan_viaje_sucursales[]
   canchas                 canchas[]
   reservas_cancha         reservas_cancha[]
+  intereses_plan          intereses_plan[]
 }
 
 model reservas_visita {
@@ -827,6 +832,7 @@ model usuarios {
   compartidas_enviadas      reservas_compartidas[]      @relation("compartida_por")
   compartidas_recibidas     reservas_compartidas[]      @relation("compartida_con")
   reservas_cancha           reservas_cancha[]
+  intereses_plan            intereses_plan[]
 }
 
 model planes_viaje {
@@ -1000,4 +1006,19 @@ model reservas_cancha {
   canchas            canchas    @relation(fields: [cancha_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sucursales         sucursales @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   usuarios           usuarios?  @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model intereses_plan {
+  id             Int                 @id @default(autoincrement())
+  sucursal_id    Int
+  usuario_id     Int
+  producto_id    Int?
+  nombre_plan    String              @db.VarChar(200)
+  precio         Decimal?            @db.Decimal(10, 2)
+  mensaje        String?
+  estado         String?             @default("pendiente") @db.VarChar(20)
+  fecha_creacion DateTime?           @default(now()) @db.Timestamp(6)
+  sucursales     sucursales          @relation(fields: [sucursal_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_interes_sucursal")
+  usuarios       usuarios            @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_interes_usuario")
+  productos_servicios productos_servicios? @relation(fields: [producto_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "fk_interes_producto")
 }

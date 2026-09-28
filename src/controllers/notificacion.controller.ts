@@ -32,3 +32,26 @@ export const marcarTodasLeidas = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Error al marcar notificaciones' });
   }
 };
+
+// POST /api/notificaciones/:id/leer  (autenticado: marca solo esa)
+export const marcarLeida = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Id inválido' });
+
+    const existente = await prisma.notificaciones.findFirst({
+      where: { id, usuario_id: req.user.id },
+      select: { id: true }
+    });
+    if (!existente) return res.status(404).json({ error: 'Notificación no encontrada' });
+
+    await prisma.notificaciones.update({ where: { id }, data: { leido: true } });
+    const noLeidas = await prisma.notificaciones.count({
+      where: { usuario_id: req.user.id, leido: false }
+    });
+    res.json({ message: 'Notificación marcada como leída', no_leidas: noLeidas });
+  } catch (error) {
+    console.error('Error marcando notificación:', error);
+    res.status(500).json({ error: 'Error al marcar la notificación' });
+  }
+};

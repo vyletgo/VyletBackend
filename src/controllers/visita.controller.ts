@@ -166,7 +166,7 @@ export const misReservasVisita = async (req: Request, res: Response) => {
   try {
     const reservas = await prisma.reservas_visita.findMany({
       where: { usuario_id: req.user.id },
-      orderBy: { fecha_visita: 'desc' },
+      orderBy: [{ fecha_creacion: 'desc' }, { id: 'desc' }],
       include: {
         sucursales: {
           include: {

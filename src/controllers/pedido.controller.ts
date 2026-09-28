@@ -15,12 +15,15 @@ export const crearPedidoDesdeReserva = async (reservaId: number): Promise<number
     const existente = await prisma.pedidos.findFirst({ where: { reserva_id: reservaId } });
     if (existente) return existente.id;
 
+    const norm = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+
     const partes = reserva.platos.split(',').map((s) => s.trim()).filter(Boolean);
     const productos = await prisma.productos_servicios.findMany({
       where: { sucursal_id: reserva.sucursal_id, activo: true },
       select: { id: true, nombre: true, precio: true, precio_oferta: true }
     });
-    const porNombre = new Map(productos.map((p) => [p.nombre.toLowerCase().trim(), p]));
+    const porNombre = new Map(productos.map((p) => [norm(p.nombre), p]));
 
     const detalle: { producto_id: number; cantidad: number; precio_unitario: number; nota: string | null }[] = [];
     const sinMatch: string[] = [];
@@ -28,15 +31,27 @@ export const crearPedidoDesdeReserva = async (reservaId: number): Promise<number
       const m = parte.match(/^(\d+)\s*x\s*(.+)$/i);
       if (!m) { sinMatch.push(parte); continue; }
       const cant = Math.min(20, Math.max(1, parseInt(m[1], 10)));
-      const prod = porNombre.get(m[2].toLowerCase().trim());
+      let nombreProd = m[2].trim();
+      let notaObs: string | null = null;
+      const obsMatch = nombreProd.match(/^(.+?)\s*\((.+)\)$/);
+      if (obsMatch) {
+        nombreProd = obsMatch[1].trim();
+        notaObs = obsMatch[2].trim();
+      }
+      const key = norm(nombreProd);
+      const prod = porNombre.get(key)
+        ?? productos.find((p) => norm(p.nombre) === key)
+        ?? productos.find((p) => norm(p.nombre).includes(key) || key.includes(norm(p.nombre)));
       if (!prod) { sinMatch.push(parte); continue; }
       detalle.push({
         producto_id: prod.id,
         cantidad: cant,
         precio_unitario: Number(prod.precio_oferta ?? prod.precio ?? 0),
-        nota: null
+        nota: notaObs
       });
     }
+
+    if (detalle.length === 0) return null;
 
     const total = detalle.reduce((s, d) => s + d.precio_unitario * d.cantidad, 0);
     const notasExtras = [

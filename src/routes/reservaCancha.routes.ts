@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import * as reservaCanchaController from '../controllers/reservaCancha.controller.js';
-import { authenticate } from '../middlewares/auth.js';
+import { authenticate, authenticateOpcional } from '../middlewares/auth.js';
 
 const router = Router();
 
-router.get('/sucursales/:id/reservas-cancha/disponibilidad', reservaCanchaController.disponibilidad);
+// Opcional: sin token sigue funcionando, pero con token marca es_mia=true (verde "los míos").
+router.get('/sucursales/:id/reservas-cancha/disponibilidad', authenticateOpcional, reservaCanchaController.disponibilidad);
 router.post('/sucursales/:id/reservas-cancha', authenticate, reservaCanchaController.reservar);
 router.post('/sucursales/:id/reservas-cancha/manual', authenticate, reservaCanchaController.crearManualReservaCancha);
 router.get('/sucursales/:id/reservas-cancha', authenticate, reservaCanchaController.listarSucursal);
