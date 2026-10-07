@@ -1,0 +1,257 @@
+[
+  {
+    "id": 2,
+    "empresa_id": 5,
+    "cedula": null,
+    "plan_id": 2,
+    "fecha_inicio": "2026-08-15T00:00:00.000Z",
+    "fecha_fin": "2027-08-15T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Basico"
+    },
+    "empresas": {
+      "nombre": "WYM SPORT"
+    }
+  },
+  {
+    "id": 3,
+    "empresa_id": 5,
+    "cedula": null,
+    "plan_id": 1,
+    "fecha_inicio": "2026-08-15T00:00:00.000Z",
+    "fecha_fin": "2027-08-15T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Gratis"
+    },
+    "empresas": {
+      "nombre": "WYM SPORT"
+    }
+  },
+  {
+    "id": 10,
+    "empresa_id": 13,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-08-28T00:00:00.000Z",
+    "fecha_fin": "2026-09-27T00:00:00.000Z",
+    "estado": "activa",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "Lugares turisticos"
+    }
+  },
+  {
+    "id": 11,
+    "empresa_id": 2,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-08-31T00:00:00.000Z",
+    "fecha_fin": "2026-09-30T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "ibis Quito"
+    }
+  },
+  {
+    "id": 12,
+    "empresa_id": 11,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "activa",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "Wolf.s Center Gym"
+    }
+  },
+  {
+    "id": 8,
+    "empresa_id": 10,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-08-19T00:00:00.000Z",
+    "fecha_fin": "2026-09-18T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "Panecillo"
+    }
+  },
+  {
+    "id": 13,
+    "empresa_id": 10,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "activa",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "Panecillo"
+    }
+  },
+  {
+    "id": 7,
+    "empresa_id": 7,
+    "cedula": null,
+    "plan_id": 3,
+    "fecha_inicio": "2026-08-19T00:00:00.000Z",
+    "fecha_fin": "2026-09-18T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Premium"
+    },
+    "empresas": {
+      "nombre": "Casa Gangotena"
+    }
+  },
+  {
+    "id": 6,
+    "empresa_id": 5,
+    "cedula": null,
+    "plan_id": 2,
+    "fecha_inicio": "2026-08-15T00:00:00.000Z",
+    "fecha_fin": "2027-08-15T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Basico"
+    },
+    "empresas": {
+      "nombre": "WYM SPORT"
+    }
+  },
+  {
+    "id": 15,
+    "empresa_id": 5,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "activa",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "WYM SPORT"
+    }
+  },
+  {
+    "id": 16,
+    "empresa_id": 2,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "ibis Quito"
+    }
+  },
+  {
+    "id": 14,
+    "empresa_id": 7,
+    "cedula": null,
+    "plan_id": 4,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "Casa Gangotena"
+    }
+  },
+  {
+    "id": 17,
+    "empresa_id": 2,
+    "cedula": null,
+    "plan_id": 3,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Premium"
+    },
+    "empresas": {
+      "nombre": "ibis Quito"
+    }
+  },
+  {
+    "id": 19,
+    "empresa_id": 2,
+    "cedula": "0100000002",
+    "plan_id": 2,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Basico"
+    },
+    "empresas": {
+      "nombre": "ibis Quito"
+    }
+  },
+  {
+    "id": 20,
+    "empresa_id": 2,
+    "cedula": "0100000002",
+    "plan_id": 3,
+    "fecha_inicio": "2026-09-02T00:00:00.000Z",
+    "fecha_fin": "2026-10-02T00:00:00.000Z",
+    "estado": "activa",
+    "planes": {
+      "nombre": "Premium"
+    },
+    "empresas": {
+      "nombre": "ibis Quito"
+    }
+  },
+  {
+    "id": 18,
+    "empresa_id": 7,
+    "cedula": "1724009988",
+    "plan_id": 4,
+    "fecha_inicio": "2026-09-01T00:00:00.000Z",
+    "fecha_fin": "2026-10-01T00:00:00.000Z",
+    "estado": "inactiva",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "Casa Gangotena"
+    }
+  },
+  {
+    "id": 21,
+    "empresa_id": 7,
+    "cedula": "1724009988",
+    "plan_id": 4,
+    "fecha_inicio": "2026-10-04T00:00:00.000Z",
+    "fecha_fin": "2026-11-03T00:00:00.000Z",
+    "estado": "activa",
+    "planes": {
+      "nombre": "Empresarial"
+    },
+    "empresas": {
+      "nombre": "Casa Gangotena"
+    }
+  }
+]

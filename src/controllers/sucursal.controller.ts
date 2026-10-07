@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarEmpresa, canGestionarSucursal, isStaff } from '../middlewares/auth.js';
-import { limiteSucursalesPorCedula, suscripcionActivaPorCedula, empresaTieneReservas } from '../services/planes.service.js';
+import { limiteSucursales, suscripcionActiva, empresaTieneReservas } from '../services/planes.service.js';
 
 // GET /api/sucursales/turisticas  (público: sucursales de empresas categoría "Lugar Turistico")
 export const listarTuristicas = async (req: Request, res: Response) => {
@@ -9,7 +9,7 @@ export const listarTuristicas = async (req: Request, res: Response) => {
     const sucursales = await prisma.sucursales.findMany({
       where: {
         activo: true,
-        empresas: { activo: true, categorias_negocio: { nombre: 'Lugar Turistico' } }
+        empresas: { activo: true, estado: 'aprobada', categorias_negocio: { nombre: 'Lugar Turistico' } }
       },
       orderBy: { fecha_creacion: 'desc' },
       include: {
@@ -29,7 +29,7 @@ export const listarTuristicas = async (req: Request, res: Response) => {
 export const listarPublicas = async (req: Request, res: Response) => {
   try {
     const sucursales = await prisma.sucursales.findMany({
-      where: { activo: true, empresas: { activo: true } },
+      where: { activo: true, empresas: { activo: true, estado: 'aprobada' } },
       orderBy: { fecha_creacion: 'desc' },
       include: {
         ciudades: { select: { id: true, nombre: true } },
@@ -57,7 +57,10 @@ export const listarPublicas = async (req: Request, res: Response) => {
 export const listByEmpresa = async (req: Request, res: Response) => {
   try {
     const empresaId = Number(req.params.empresaId);
-    const empresa = await prisma.empresas.findFirst({ where: { id: empresaId, activo: true } });
+    const puedeGestionar = req.user ? await canGestionarEmpresa(req, empresaId) : false;
+    const empresa = await prisma.empresas.findFirst({
+      where: { id: empresaId, activo: true, ...(puedeGestionar ? {} : { estado: 'aprobada' }) }
+    });
     if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
 
     const sucursales = await prisma.sucursales.findMany({
@@ -165,24 +168,17 @@ export const create = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'No puedes gestionar esta empresa' });
     }
 
-    // Límite del plan: cantidad de sucursales según la suscripción activa del usuario por cédula
+    // Límite del plan: cantidad de sucursales que permite el plan de ESTA empresa
     if (!isStaff(req)) {
-      const usuario = await prisma.usuarios.findUnique({
-        where: { id: req.user.id },
-        select: { cedula: true }
-      });
-      const cedula = usuario?.cedula ?? '';
-      if (cedula) {
-        const limite = await limiteSucursalesPorCedula(cedula);
-        if (limite !== null) {
-          const count = await prisma.sucursales.count({ where: { empresa_id: empresaId, activo: true } });
-          if (count >= limite) {
-            const sub = await suscripcionActivaPorCedula(cedula);
-            const plan = sub?.planes?.nombre ?? 'Gratis';
-            return res.status(403).json({
-              error: `Tu plan ${plan} permite hasta ${limite} sucursal(es). Mejora de plan para agregar más.`
-            });
-          }
+      const limite = await limiteSucursales(empresaId);
+      if (limite !== null) {
+        const count = await prisma.sucursales.count({ where: { empresa_id: empresaId, activo: true } });
+        if (count >= limite) {
+          const plan = await suscripcionActiva(empresaId);
+          const nombrePlan = plan?.planes?.nombre ?? 'Gratis';
+          return res.status(403).json({
+            error: `El plan ${nombrePlan} de esta empresa permite hasta ${limite} sucursal(es). Mejora de plan para agregar más.`
+          });
         }
       }
     }

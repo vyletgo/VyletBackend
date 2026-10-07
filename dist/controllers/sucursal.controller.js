@@ -134,7 +134,11 @@ export const getById = async (req, res) => {
         if (!sucursal)
             return res.status(404).json({ error: 'Sucursal no encontrada' });
         const reservasHabilitadas = await empresaTieneReservas(sucursal.empresa_id);
-        const resultado = { ...sucursal, reservas_habilitadas: reservasHabilitadas };
+        const cartillaActiva = await prisma.cartilla_config.findFirst({
+            where: { sucursal_id: id, activo: true },
+            select: { id: true }
+        });
+        const resultado = { ...sucursal, reservas_habilitadas: reservasHabilitadas, cartilla_activa: !!cartillaActiva };
         if (req.user) {
             resultado.puedoGestionar = await canGestionarSucursal(req, sucursal);
         }

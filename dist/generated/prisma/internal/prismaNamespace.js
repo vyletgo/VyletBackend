@@ -36,12 +36,12 @@ export const Sql = runtime.Sql;
 export const Decimal = runtime.Decimal;
 export const getExtensionContext = runtime.Extensions.getExtensionContext;
 /**
- * Prisma Client JS version: 7.9.1
- * Query Engine version: e922089b7d7502aff4249d5da3420f6fa55fc6ad
+ * Prisma Client JS version: 7.10.0
+ * Query Engine version: 0edf323efd1d98336f3f0a68684b56f689b900d3
  */
 export const prismaVersion = {
-    client: "7.9.1",
-    engine: "e922089b7d7502aff4249d5da3420f6fa55fc6ad"
+    client: "7.10.0",
+    engine: "0edf323efd1d98336f3f0a68684b56f689b900d3"
 };
 export const NullTypes = {
     DbNull: runtime.NullTypes.DbNull,
@@ -140,7 +140,8 @@ export const ModelName = {
     ubicaciones_publicidad: 'ubicaciones_publicidad',
     usuario_empresas: 'usuario_empresas',
     canchas: 'canchas',
-    reservas_cancha: 'reservas_cancha'
+    reservas_cancha: 'reservas_cancha',
+    intereses_plan: 'intereses_plan'
 };
 /**
  * Enums
@@ -362,6 +363,7 @@ export const FavoritosScalarFieldEnum = {
     id: 'id',
     usuario_id: 'usuario_id',
     sucursal_id: 'sucursal_id',
+    evento_id: 'evento_id',
     fecha_creacion: 'fecha_creacion'
 };
 export const Habitacion_imagenesScalarFieldEnum = {
@@ -856,6 +858,17 @@ export const Reservas_canchaScalarFieldEnum = {
     cliente_nombre: 'cliente_nombre',
     cliente_telefono: 'cliente_telefono',
     cliente_correo: 'cliente_correo',
+    estado: 'estado',
+    fecha_creacion: 'fecha_creacion'
+};
+export const Intereses_planScalarFieldEnum = {
+    id: 'id',
+    sucursal_id: 'sucursal_id',
+    usuario_id: 'usuario_id',
+    producto_id: 'producto_id',
+    nombre_plan: 'nombre_plan',
+    precio: 'precio',
+    mensaje: 'mensaje',
     estado: 'estado',
     fecha_creacion: 'fecha_creacion'
 };

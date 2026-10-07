@@ -1,4 +1,5 @@
 import { prisma } from '../services/prisma.js';
+import { isStaff } from '../middlewares/auth.js';
 // GET /api/estadisticas/mias?meses=12&inicio=2025-01-01&fin=2025-12-31&empresa_id=5&sucursal_id=7
 export const misEstadisticas = async (req, res) => {
     try {
@@ -14,15 +15,17 @@ export const misEstadisticas = async (req, res) => {
             ? new Date(inicioQuery)
             : new Date(hoy.getFullYear(), hoy.getMonth() - (meses - 1), 1);
         const fechaFin = finQuery ? new Date(finQuery + 'T23:59:59') : hoy;
-        // Obtener empresas del usuario
+        // Obtener empresas del usuario (staff: todas)
         const empresas = await prisma.empresas.findMany({
-            where: {
-                activo: true,
-                OR: [
-                    { usuario_empresas: { some: { usuario_id: userId } } },
-                    { propietario: req.user.correo }
-                ]
-            },
+            where: isStaff(req)
+                ? { activo: true }
+                : {
+                    activo: true,
+                    OR: [
+                        { usuario_empresas: { some: { usuario_id: userId } } },
+                        { propietario: req.user.correo }
+                    ]
+                },
             select: { id: true, nombre: true }
         });
         if (empresas.length === 0) {
@@ -43,7 +46,7 @@ export const misEstadisticas = async (req, res) => {
             },
             include: { planes: true }
         });
-        if (subs.length === 0) {
+        if (subs.length === 0 && !isStaff(req)) {
             return res.json({ premium: false, empresas: [] });
         }
         // Sucursales (filtradas por empresa si se especifica)

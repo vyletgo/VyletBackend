@@ -112,7 +112,8 @@ export const ModelName = {
     ubicaciones_publicidad: 'ubicaciones_publicidad',
     usuario_empresas: 'usuario_empresas',
     canchas: 'canchas',
-    reservas_cancha: 'reservas_cancha'
+    reservas_cancha: 'reservas_cancha',
+    intereses_plan: 'intereses_plan'
 };
 /*
  * Enums
@@ -334,6 +335,7 @@ export const FavoritosScalarFieldEnum = {
     id: 'id',
     usuario_id: 'usuario_id',
     sucursal_id: 'sucursal_id',
+    evento_id: 'evento_id',
     fecha_creacion: 'fecha_creacion'
 };
 export const Habitacion_imagenesScalarFieldEnum = {
@@ -828,6 +830,17 @@ export const Reservas_canchaScalarFieldEnum = {
     cliente_nombre: 'cliente_nombre',
     cliente_telefono: 'cliente_telefono',
     cliente_correo: 'cliente_correo',
+    estado: 'estado',
+    fecha_creacion: 'fecha_creacion'
+};
+export const Intereses_planScalarFieldEnum = {
+    id: 'id',
+    sucursal_id: 'sucursal_id',
+    usuario_id: 'usuario_id',
+    producto_id: 'producto_id',
+    nombre_plan: 'nombre_plan',
+    precio: 'precio',
+    mensaje: 'mensaje',
     estado: 'estado',
     fecha_creacion: 'fecha_creacion'
 };

@@ -1,6 +1,10 @@
 import { prisma } from './prisma.js';
+import { esStaffPorId } from '../middlewares/auth.js';
 
 export const verificarAccesoSucursal = async (userId: number, sucursalId: number): Promise<boolean> => {
+  // Staff de plataforma (admin/gerente/superadmin): acceso total
+  if (await esStaffPorId(userId)) return true;
+
   const sucursal = await prisma.sucursales.findUnique({ where: { id: sucursalId }, select: { empresa_id: true } });
   if (!sucursal) return false;
 

@@ -187,6 +187,7 @@ model empresas {
   id                 Int                 @id @default(autoincrement())
   categoria_id       Int
   nombre             String              @db.VarChar(200)
+  ruc                String?             @unique @db.VarChar(13)
   descripcion        String?
   logo               String?             @db.VarChar(500)
   email              String?             @db.VarChar(150)
@@ -199,6 +200,7 @@ model empresas {
   longitud           Decimal?            @db.Decimal(11, 8)
   verificado         Boolean?            @default(false)
   destacado          Boolean?            @default(false)
+  estado             String              @default("aprobada") @db.VarChar(20)
   activo             Boolean?            @default(true)
   fecha_creacion     DateTime?           @default(now()) @db.Timestamp(6)
   empresa_empleados  empresa_empleados[]
@@ -494,6 +496,14 @@ model marcas {
   activo         Boolean   @default(true)
   orden          Int       @default(0)
   fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model rate_limit {
+  clave     String   @id
+  contador  Int
+  reinicio  DateTime @db.Timestamptz
+
+  @@index([reinicio])
 }
 
 model recomendaciones {

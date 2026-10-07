@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarSucursal, isStaff } from '../middlewares/auth.js';
-import { permiteReservasPorCedula } from '../services/planes.service.js';
+import { permiteReservas } from '../services/planes.service.js';
 import { estadoAbierto } from '../services/horario.service.js';
 import { notificarUsuario } from '../services/socket.service.js';
 
@@ -282,9 +282,7 @@ export const crearReservaHabitacion = async (req: Request, res: Response) => {
 
     const sucursalHab = await prisma.sucursales.findUnique({ where: { id: h.sucursal_id }, select: { empresa_id: true, horario: true } });
     if (!sucursalHab) return res.status(404).json({ error: 'Sucursal no encontrada' });
-    const usuarioHab = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-    const cedulaHab = usuarioHab?.cedula ?? '';
-    if (cedulaHab && !(await permiteReservasPorCedula(cedulaHab))) {
+    if (!(await permiteReservas(sucursalHab.empresa_id))) {
       return res.status(403).json({ error: 'Las reservas solo estan disponibles en el plan Premium o superior. Actualiza tu plan.' });
     }
 
@@ -364,9 +362,7 @@ export const crearReservaHabitacionMulti = async (req: Request, res: Response) =
     });
     if (!sucursal) return res.status(404).json({ error: 'Sucursal no encontrada' });
     if (!(await esHospedaje(sucursalId))) return res.status(404).json({ error: 'Habitaciones no disponibles para este negocio' });
-    const usuarioMulti = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-    const cedulaMulti = usuarioMulti?.cedula ?? '';
-    if (cedulaMulti && !(await permiteReservasPorCedula(cedulaMulti))) {
+    if (!(await permiteReservas(sucursal.empresa_id))) {
       return res.status(403).json({ error: 'Las reservas solo estan disponibles en el plan Premium o superior. Actualiza tu plan.' });
     }
 
@@ -494,9 +490,7 @@ export const crearReservaManual = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'No puedes gestionar habitaciones de esta sucursal' });
     }
     if (!isStaff(req)) {
-      const usuarioManual = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-      const cedulaManual = usuarioManual?.cedula ?? '';
-      if (cedulaManual && !(await permiteReservasPorCedula(cedulaManual))) {
+      if (!(await permiteReservas(sucursal.empresa_id))) {
         return res.status(403).json({ error: 'Las reservas solo estan disponibles en el plan Premium o superior. Actualiza tu plan.' });
       }
     }

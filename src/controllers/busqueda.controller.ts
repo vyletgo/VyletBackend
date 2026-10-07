@@ -37,7 +37,7 @@ export const buscarSucursalesPorProducto = async (req: Request, res: Response) =
       prisma.productos_servicios.findMany({
         where: {
           activo: true,
-          sucursales: { activo: true, empresas: { activo: true } },
+          sucursales: { activo: true, empresas: { activo: true, estado: 'aprobada' } },
           OR: [
             { nombre: { contains: q, mode: 'insensitive' } },
             { descripcion: { contains: q, mode: 'insensitive' } }
@@ -49,7 +49,7 @@ export const buscarSucursalesPorProducto = async (req: Request, res: Response) =
       prisma.habitaciones.findMany({
         where: {
           activa: true,
-          sucursales: { activo: true, empresas: { activo: true } },
+          sucursales: { activo: true, empresas: { activo: true, estado: 'aprobada' } },
           nombre: { contains: q, mode: 'insensitive' }
         },
         orderBy: { nombre: 'asc' },
@@ -58,7 +58,7 @@ export const buscarSucursalesPorProducto = async (req: Request, res: Response) =
       prisma.sucursales.findMany({
         where: {
           activo: true,
-          empresas: { activo: true },
+          empresas: { activo: true, estado: 'aprobada' },
           nombre: { contains: q, mode: 'insensitive' }
         },
         orderBy: { nombre: 'asc' },

@@ -1,5 +1,8 @@
 import jwt from 'jsonwebtoken';
-const QR_SECRET = process.env.JWT_QR_SECRET || process.env.JWT_SECRET || 'vylet-qr-secret-change-in-production';
+import { esSecretoValido, resolverSecreto } from './jwt.service.js';
+const QR_SECRET = esSecretoValido('JWT_QR_SECRET')
+    ? resolverSecreto('JWT_QR_SECRET')
+    : resolverSecreto('JWT_SECRET');
 const QR_EXPIRY = '5m'; // 5 minutos
 export const generarQRToken = (usuarioId, cuponId) => {
     return jwt.sign({ tipo: 'cupon', uid: usuarioId, cid: cuponId }, QR_SECRET, { expiresIn: QR_EXPIRY });

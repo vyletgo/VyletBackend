@@ -33,7 +33,9 @@ export const listarMesas = async (req, res) => {
         res.status(500).json({ error: 'Error al listar mesas' });
     }
 };
-// GET /api/sucursales/:id/mesas/disponibilidad?fecha=YYYY-MM-DD&hora=HH:MM  (público)
+// GET /api/sucursales/:id/mesas/disponibilidad?fecha=YYYY-MM-DD[&hora=HH:MM]  (público)
+// - Solo fecha: devuelve mesas con todas las ocupaciones del día (para panel admin)
+// - fecha + hora: comportamiento clásico (libres/ocupadas a esa hora exacta)
 export const disponibilidadMesas = async (req, res) => {
     try {
         const sucursalId = Number(req.params.id);
@@ -41,14 +43,76 @@ export const disponibilidadMesas = async (req, res) => {
             return res.json([]);
         const { fecha, hora } = req.query;
         const fechaReserva = fecha ? new Date(String(fecha)) : null;
-        const horaReserva = hora ? timeToDate(String(hora)) : null;
-        if (!fechaReserva || !horaReserva) {
-            return res.status(400).json({ error: 'fecha (YYYY-MM-DD) y hora (HH:MM) son requeridas' });
+        if (!fechaReserva || isNaN(fechaReserva.getTime())) {
+            return res.status(400).json({ error: 'fecha (YYYY-MM-DD) es requerida' });
         }
         const mesas = await prisma.mesas.findMany({
             where: { sucursal_id: sucursalId, activa: true },
             orderBy: { id: 'asc' }
         });
+        // Modo día completo (sin hora): devolver ocupaciones del día por mesa
+        if (!hora) {
+            const inicioDia = new Date(fechaReserva);
+            inicioDia.setHours(0, 0, 0, 0);
+            const finDia = new Date(inicioDia);
+            finDia.setDate(inicioDia.getDate() + 1);
+            const reservasDia = await prisma.reservas.findMany({
+                where: {
+                    mesa_id: { in: mesas.map((m) => m.id) },
+                    fecha_reserva: fechaReserva,
+                    estado: { in: estadosOcupan }
+                },
+                select: {
+                    id: true,
+                    mesa_id: true,
+                    hora_inicio: true,
+                    cantidad_personas: true,
+                    cliente_nombre: true,
+                    estado: true,
+                    usuarios: { select: { nombres: true, apellidos: true } }
+                },
+                orderBy: { hora_inicio: 'asc' }
+            });
+            const porMesa = new Map();
+            for (const r of reservasDia) {
+                if (r.mesa_id == null)
+                    continue;
+                const arr = porMesa.get(r.mesa_id) ?? [];
+                arr.push(r);
+                porMesa.set(r.mesa_id, arr);
+            }
+            const horaATexto = (d) => {
+                if (!d)
+                    return null;
+                return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+            };
+            return res.json({
+                fecha: String(fecha),
+                modo: 'dia',
+                mesas: mesas.map((m) => {
+                    const ocupaciones = (porMesa.get(m.id) ?? []).map((r) => ({
+                        reserva_id: r.id,
+                        hora: horaATexto(r.hora_inicio),
+                        personas: r.cantidad_personas ?? 1,
+                        cliente: r.cliente_nombre
+                            ?? (r.usuarios ? `${r.usuarios.nombres} ${r.usuarios.apellidos ?? ''}`.trim() : null),
+                        estado: r.estado
+                    }));
+                    return {
+                        ...m,
+                        ocupaciones,
+                        ocupadas: ocupaciones.length,
+                        libres: Math.max(0, m.cantidad - ocupaciones.length),
+                        ocupada: ocupaciones.length >= m.cantidad
+                    };
+                })
+            });
+        }
+        // Modo fecha + hora exacta (compatibilidad con código existente)
+        const horaReserva = timeToDate(String(hora));
+        if (!horaReserva) {
+            return res.status(400).json({ error: 'hora (HH:MM) inválida' });
+        }
         const reservadas = await prisma.reservas.groupBy({
             by: ['mesa_id'],
             where: {
@@ -62,18 +126,98 @@ export const disponibilidadMesas = async (req, res) => {
         const ocupadasPorMesa = new Map(reservadas.map((r) => [r.mesa_id, r._count._all]));
         res.json(mesas.map((m) => {
             const ocupadas = ocupadasPorMesa.get(m.id) ?? 0;
-            const libres = Math.max(0, m.cantidad - ocupadas);
+            // Misma mesa + misma hora = ocupada (sin importar unidades)
+            const ocupada = ocupadas > 0;
             return {
                 ...m,
                 ocupadas,
-                libres,
-                ocupada: libres <= 0
+                libres: ocupada ? 0 : m.cantidad,
+                ocupada
             };
         }));
     }
     catch (error) {
         console.error('Error consultando disponibilidad de mesas:', error);
         res.status(500).json({ error: 'Error al consultar disponibilidad' });
+    }
+};
+// GET /api/sucursales/:id/mesas/sugerir?fecha=YYYY-MM-DD&hora=HH:MM&personas=N  (público)
+// Sugiere combinación de mesas libres para cubrir N personas en ese slot.
+export const sugerirMesas = async (req, res) => {
+    try {
+        const sucursalId = Number(req.params.id);
+        if (!(await esRestaurante(sucursalId))) {
+            return res.json({ sugeridas: [], personas_cubiertas: 0, personas_faltantes: 0, suficiente: false });
+        }
+        const { fecha, hora, personas } = req.query;
+        if (!fecha || !hora) {
+            return res.status(400).json({ error: 'fecha y hora son requeridas' });
+        }
+        const fechaReserva = new Date(String(fecha));
+        if (isNaN(fechaReserva.getTime())) {
+            return res.status(400).json({ error: 'fecha inválida' });
+        }
+        const horaReserva = timeToDate(String(hora));
+        if (!horaReserva) {
+            return res.status(400).json({ error: 'hora inválida' });
+        }
+        const personasN = Math.max(1, Number(personas) || 1);
+        const mesas = await prisma.mesas.findMany({
+            where: { sucursal_id: sucursalId, activa: true },
+            orderBy: [{ puestos: 'desc' }, { id: 'asc' }]
+        });
+        const reservadas = await prisma.reservas.groupBy({
+            by: ['mesa_id'],
+            where: {
+                mesa_id: { in: mesas.map((m) => m.id) },
+                fecha_reserva: fechaReserva,
+                hora_inicio: horaReserva,
+                estado: { in: estadosOcupan }
+            },
+            _count: { _all: true }
+        });
+        const ocupadasPorMesa = new Map(reservadas.map((r) => [r.mesa_id, r._count._all]));
+        // Mesas libres a esa hora: misma mesa + misma hora = ocupada (aunque queden unidades)
+        const candidatas = mesas
+            .filter((m) => (ocupadasPorMesa.get(m.id) ?? 0) === 0)
+            .map((m) => ({ mesa: m, unidadesLibres: 1 }));
+        // Greedy: preferir mesa que mejor se ajuste (puestos >= restantes primero, luego mayor puestos)
+        let restantes = personasN;
+        const sugeridas = [];
+        const disponibles = [...candidatas];
+        while (restantes > 0 && disponibles.length) {
+            disponibles.sort((a, b) => {
+                const aAjusta = a.mesa.puestos >= restantes ? 0 : 1;
+                const bAjusta = b.mesa.puestos >= restantes ? 0 : 1;
+                if (aAjusta !== bAjusta)
+                    return aAjusta - bAjusta;
+                // Si ambos no alcanzan solos, mayor puestos primero; si ambos alcanzan, menor sobrante
+                if (aAjusta === 1)
+                    return b.mesa.puestos - a.mesa.puestos;
+                return a.mesa.puestos - b.mesa.puestos;
+            });
+            const elegida = disponibles[0];
+            if (!elegida)
+                break;
+            sugeridas.push(elegida.mesa);
+            restantes -= elegida.mesa.puestos;
+            elegida.unidadesLibres -= 1;
+            if (elegida.unidadesLibres <= 0) {
+                disponibles.shift();
+            }
+        }
+        const personasCubiertas = Math.min(personasN, personasN - Math.max(0, restantes));
+        res.json({
+            sugeridas,
+            personas_cubiertas: personasCubiertas,
+            personas_faltantes: Math.max(0, restantes),
+            suficiente: restantes <= 0,
+            personas
+        });
+    }
+    catch (error) {
+        console.error('Error sugiriendo mesas:', error);
+        res.status(500).json({ error: 'Error al sugerir mesas' });
     }
 };
 // POST /api/sucursales/:id/mesas  { nombre, puestos, foto }  (dueño/staff/empleado de la sucursal)

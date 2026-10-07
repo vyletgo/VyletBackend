@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarSucursal } from '../middlewares/auth.js';
-import { permiteReservasPorCedula } from '../services/planes.service.js';
+import { permiteReservas } from '../services/planes.service.js';
 import { estadoAbierto } from '../services/horario.service.js';
 
 const estadosValidos = ['pendiente', 'confirmada', 'cancelada', 'completada'];
@@ -21,7 +21,8 @@ export const disponibilidad = async (req: Request, res: Response) => {
     const sucursal = await prisma.sucursales.findFirst({ where: { id: sucursalId, activo: true } });
     if (!sucursal) return res.status(404).json({ error: 'Sucursal no encontrada' });
 
-    const aforo = sucursal.aforo_maximo ?? null;
+    // aforo_maximo 0 o vacío = sin límite definido
+    const aforo = sucursal.aforo_maximo != null && sucursal.aforo_maximo > 0 ? sucursal.aforo_maximo : null;
     if (aforo == null) {
       return res.json({ aforo_maximo: null, usados: 0, cupos: null, libre: null });
     }
@@ -51,9 +52,7 @@ export const crearReservaVisita = async (req: Request, res: Response) => {
     const sucursal = await prisma.sucursales.findFirst({ where: { id: sucursalId, activo: true } });
     if (!sucursal) return res.status(404).json({ error: 'Sucursal no encontrada' });
 
-    const usuarioVis = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-    const cedulaVis = usuarioVis?.cedula ?? '';
-    if (cedulaVis && !(await permiteReservasPorCedula(cedulaVis))) {
+    if (!(await permiteReservas(sucursal.empresa_id))) {
       return res.status(403).json({ error: 'Las reservas solo estan disponibles en el plan Premium o superior. Actualiza tu plan.' });
     }
 
@@ -70,7 +69,7 @@ export const crearReservaVisita = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Indica al menos un adulto o un niño' });
     }
 
-    const aforo = sucursal.aforo_maximo;
+    const aforo = sucursal.aforo_maximo != null && sucursal.aforo_maximo > 0 ? sucursal.aforo_maximo : null;
     if (aforo != null) {
       const usados = await prisma.reservas_visita.aggregate({
         where: { sucursal_id: sucursalId, fecha_visita: fecha, estado: { in: estadosOcupan } },

@@ -1,8 +1,18 @@
 import { prisma } from '../services/prisma.js';
 import { canGestionarSucursal, isStaff } from '../middlewares/auth.js';
 import { permiteReservasPorCedula } from '../services/planes.service.js';
+import { notificarUsuario } from '../services/socket.service.js';
 const estadosValidos = ['pendiente', 'confirmada', 'cancelada', 'completada'];
 const estadosOcupan = { notIn: ['cancelada'] };
+// Crea la fila de notificación y la emite en vivo por WebSocket.
+// Nunca debe romper el flujo principal (se llama en try/catch propio).
+const guardarNotificacion = async (usuarioId, data) => {
+    const notif = await prisma.notificaciones.create({
+        data: { usuario_id: usuarioId, ...data }
+    });
+    notificarUsuario(usuarioId, { tipo: data.tipo, notificacion: notif });
+    return notif;
+};
 const usuarioSelect = {
     id: true,
     nombres: true,
@@ -28,6 +38,31 @@ const esHospedaje = async (sucursalId) => {
         select: { empresas: { select: { categorias_negocio: { select: { permite_habitaciones: true } } } } }
     });
     return s?.empresas?.categorias_negocio?.permite_habitaciones === true;
+};
+// Avisa a los dueños de la empresa (nueva reserva) y al cliente (reserva registrada)
+const notificarReservaHabitacionCreada = async (empresaId, sucursalId, entrada, salida, cantidad, clienteId) => {
+    const sucursal = await prisma.sucursales.findUnique({ where: { id: sucursalId }, select: { nombre: true } });
+    const nombreSucursal = sucursal?.nombre ?? 'el hotel';
+    const rangoFechas = `${entrada.toLocaleDateString('es-EC')} al ${salida.toLocaleDateString('es-EC')}`;
+    const detalle = cantidad > 1 ? `${cantidad} habitaciones (${rangoFechas})` : rangoFechas;
+    const duenos = await prisma.usuario_empresas.findMany({
+        where: { empresa_id: empresaId },
+        select: { usuario_id: true }
+    });
+    for (const d of duenos) {
+        await guardarNotificacion(d.usuario_id, {
+            tipo: 'nueva_reserva_habitacion',
+            titulo: 'Nueva reserva de habitación',
+            mensaje: `Se reservó ${detalle} en ${nombreSucursal}.`,
+            enlace: `/admin/sucursales/${sucursalId}/habitaciones`
+        });
+    }
+    await guardarNotificacion(clienteId, {
+        tipo: 'reserva_habitacion_creada',
+        titulo: 'Reserva de habitación registrada',
+        mensaje: `Tu reserva en ${nombreSucursal} (${detalle}) quedó registrada y está pendiente de confirmación.`,
+        enlace: '/mis-reservas?tab=habitaciones'
+    });
 };
 // Normaliza y valida la lista de imágenes (1 a 5)
 const validarImagenes = (imagenes) => {
@@ -288,6 +323,12 @@ export const crearReservaHabitacion = async (req, res) => {
                 habitaciones: { include: { sucursales: { include: { empresas: { select: { nombre: true } } } } } }
             }
         })));
+        try {
+            await notificarReservaHabitacionCreada(sucursalHab.empresa_id, h.sucursal_id, entrada, salida, cantNum, req.user.id);
+        }
+        catch (e) {
+            console.error('Error notificando nueva reserva de habitación:', e);
+        }
         res.status(201).json(cantNum > 1 ? { reservas: creadas } : creadas[0]);
     }
     catch (error) {
@@ -299,7 +340,10 @@ export const crearReservaHabitacion = async (req, res) => {
 export const crearReservaHabitacionMulti = async (req, res) => {
     try {
         const sucursalId = Number(req.params.id);
-        const sucursal = await prisma.sucursales.findFirst({ where: { id: sucursalId, activo: true } });
+        const sucursal = await prisma.sucursales.findFirst({
+            where: { id: sucursalId, activo: true },
+            select: { empresa_id: true, nombre: true }
+        });
         if (!sucursal)
             return res.status(404).json({ error: 'Sucursal no encontrada' });
         if (!(await esHospedaje(sucursalId)))
@@ -403,6 +447,13 @@ export const crearReservaHabitacionMulti = async (req, res) => {
             }));
         }));
         res.status(201).json({ reservas: creadas });
+        try {
+            const total = cantPorHab.reduce((a, b) => a + b, 0);
+            await notificarReservaHabitacionCreada(sucursal.empresa_id, sucursalId, entrada, salida, total, req.user.id);
+        }
+        catch (e) {
+            console.error('Error notificando reservas múltiples de habitación:', e);
+        }
     }
     catch (error) {
         console.error('Error creando reserva múltiple de habitaciones:', error);
@@ -494,20 +545,39 @@ export const listarReservasSucursal = async (req, res) => {
             return res.status(403).json({ error: 'No puedes ver las reservas de habitaciones de esta sucursal' });
         }
         const { desde, hasta } = parseRango(req, 30);
-        const reservas = await prisma.reservas_habitacion.findMany({
-            where: {
-                habitaciones: { sucursal_id: sucursalId },
-                estado: estadosOcupan,
-                fecha_entrada: { lt: hasta },
-                fecha_salida: { gt: desde }
-            },
-            orderBy: { fecha_entrada: 'asc' },
-            include: {
-                habitaciones: { select: { id: true, nombre: true } },
-                usuarios: { select: usuarioSelect }
-            }
-        });
-        res.json({ desde, hasta, reservas });
+        const estado = req.query.estado ? String(req.query.estado) : '';
+        const limite = req.query.limite
+            ? Math.min(100, Math.max(1, Number(req.query.limite) || 10))
+            : 0;
+        const offset = Math.max(0, Number(req.query.offset) || 0);
+        const whereBase = {
+            habitaciones: { sucursal_id: sucursalId },
+            fecha_entrada: { lt: hasta },
+            fecha_salida: { gt: desde }
+        };
+        const where = estado ? { ...whereBase, estado } : whereBase;
+        const [reservas, total, porEstado] = await Promise.all([
+            prisma.reservas_habitacion.findMany({
+                where,
+                // De nueva a antigua (orden de creaci�n)
+                orderBy: { id: 'desc' },
+                ...(limite ? { take: limite, skip: offset } : {}),
+                include: {
+                    habitaciones: { select: { id: true, nombre: true } },
+                    usuarios: { select: usuarioSelect }
+                }
+            }),
+            prisma.reservas_habitacion.count({ where }),
+            prisma.reservas_habitacion.groupBy({
+                by: ['estado'],
+                where: whereBase,
+                _count: { _all: true }
+            })
+        ]);
+        const resumen = { total };
+        for (const g of porEstado)
+            resumen[String(g.estado)] = g._count._all;
+        res.json({ desde, hasta, total, resumen, reservas });
     }
     catch (error) {
         console.error('Error listando reservas de habitaciones:', error);
@@ -521,7 +591,7 @@ export const cambiarEstadoReservaHabitacion = async (req, res) => {
         const r = await prisma.reservas_habitacion.findUnique({
             where: { id },
             include: {
-                habitaciones: { include: { sucursales: { select: { id: true, empresa_id: true } } } }
+                habitaciones: { include: { sucursales: { select: { id: true, empresa_id: true, nombre: true } } } }
             }
         });
         if (!r)
@@ -537,6 +607,25 @@ export const cambiarEstadoReservaHabitacion = async (req, res) => {
         }
         const actualizada = await prisma.reservas_habitacion.update({ where: { id }, data: { estado } });
         res.json(actualizada);
+        if (r.usuario_id) {
+            const etiqueta = {
+                pendiente: 'pendiente de confirmación',
+                confirmada: 'confirmada',
+                cancelada: 'cancelada',
+                completada: 'completada'
+            };
+            try {
+                await guardarNotificacion(r.usuario_id, {
+                    tipo: 'reserva_habitacion_estado',
+                    titulo: 'Tu reserva de habitación cambió de estado',
+                    mensaje: `Tu reserva en ${r.habitaciones.sucursales.nombre} ahora está: ${etiqueta[estado] ?? estado}.`,
+                    enlace: '/mis-reservas?tab=habitaciones'
+                });
+            }
+            catch (e) {
+                console.error('Error notificando cambio de estado de reserva de habitación:', e);
+            }
+        }
     }
     catch (error) {
         console.error('Error actualizando reserva de habitación:', error);
@@ -548,7 +637,7 @@ export const misReservasHabitacion = async (req, res) => {
     try {
         const reservas = await prisma.reservas_habitacion.findMany({
             where: { usuario_id: req.user.id },
-            orderBy: { fecha_entrada: 'desc' },
+            orderBy: { id: 'desc' },
             include: {
                 habitaciones: {
                     select: {

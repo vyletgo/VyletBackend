@@ -134,7 +134,7 @@ export const listarSucursalesDisponibles = async (req: Request, res: Response) =
     const q = String(req.query.q ?? '').trim().toLowerCase();
     const where: Prisma.sucursalesWhereInput = {
       activo: true,
-      empresas: { activo: true }
+      empresas: { activo: true, estado: 'aprobada' }
     };
     if (q) {
       where.OR = [

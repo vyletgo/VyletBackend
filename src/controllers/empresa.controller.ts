@@ -1,13 +1,12 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarEmpresa, canGestionarSucursal, isStaff } from '../middlewares/auth.js';
-import { contarEmpresasPorCorreo, limiteEmpresasPorCorreo } from '../services/planes.service.js';
 
-// GET /api/empresas  (público: solo activas)
+// GET /api/empresas  (público: solo activas y aprobadas por el staff)
 export const list = async (req: Request, res: Response) => {
   try {
     const { categoria_id, q, destacado } = req.query;
-    const where: any = { activo: true };
+    const where: any = { activo: true, estado: 'aprobada' };
     if (categoria_id) where.categoria_id = Number(categoria_id);
     if (q) where.nombre = { contains: String(q) };
     if (destacado === '1') where.destacado = true;
@@ -69,8 +68,13 @@ export const listMine = async (req: Request, res: Response) => {
 export const getById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
+    const puedeGestionar = req.user ? await canGestionarEmpresa(req, id) : false;
     const empresa = await prisma.empresas.findFirst({
-      where: { id, activo: true },
+      where: {
+        id,
+        activo: true,
+        ...(puedeGestionar ? {} : { estado: 'aprobada' })
+      },
       include: {
         categorias_negocio: true,
         sucursales: {
@@ -81,8 +85,8 @@ export const getById = async (req: Request, res: Response) => {
     });
     if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
     const resultado: any = { ...empresa };
+    resultado.puedoGestionar = puedeGestionar;
     if (req.user) {
-      resultado.puedoGestionar = await canGestionarEmpresa(req, id);
       const conGestion = await Promise.all(
         (empresa.sucursales ?? []).map(async (s) => ({ ...s, puedoGestionar: await canGestionarSucursal(req, s) }))
       );
@@ -101,6 +105,7 @@ export const create = async (req: Request, res: Response) => {
     const {
       nombre,
       categoria_id,
+      ruc,
       descripcion,
       logo,
       email,
@@ -117,20 +122,21 @@ export const create = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'nombre y categoria_id son requeridos' });
     }
 
-    // Límite del plan: según las suscripciones activas del dueño (Gratis = 1, Básico = 2, Premium = 5, Empresarial = 10)
-    if (!isStaff(req)) {
-      const total = await contarEmpresasPorCorreo(req.user.correo);
-      const limite = await limiteEmpresasPorCorreo(req.user.correo);
-      if (limite !== null && total >= limite) {
-        return res.status(403).json({
-          error: `Límite de empresas alcanzado (${total} de ${limite}). Actualiza tu plan para crear más.`
-        });
+    const rucLimpio = typeof ruc === 'string' ? ruc.replace(/\D/g, '') : '';
+    if (rucLimpio && !/^\d{13}$/.test(rucLimpio)) {
+      return res.status(400).json({ error: 'El RUC debe tener 13 dígitos' });
+    }
+    if (rucLimpio) {
+      const yaExiste = await prisma.empresas.findFirst({ where: { ruc: rucLimpio } });
+      if (yaExiste) {
+        return res.status(409).json({ error: 'Ya existe una empresa registrada con ese RUC' });
       }
     }
 
     const data: any = {
       nombre,
       categoria_id: Number(categoria_id),
+      ruc: rucLimpio || null,
       descripcion,
       logo,
       email,
@@ -142,6 +148,8 @@ export const create = async (req: Request, res: Response) => {
       longitud: longitud !== undefined && longitud !== '' ? Number(longitud) : undefined
     };
     data.propietario = isStaff(req) && propietario ? String(propietario) : req.user?.correo ?? null;
+    // Solo admin/superadmin/gerente crea empresas aprobadas; el resto quedan pendientes de revisión
+    data.estado = isStaff(req) ? 'aprobada' : 'pendiente';
 
     const empresa = await prisma.empresas.create({ data });
 
@@ -158,7 +166,13 @@ export const create = async (req: Request, res: Response) => {
       }
     }
 
-    res.status(201).json(empresa);
+    res.status(201).json({
+      ...empresa,
+      message:
+        empresa.estado === 'pendiente'
+          ? 'Empresa creada. Quedará visible cuando un administrador la revise y apruebe.'
+          : undefined
+    });
   } catch (error) {
     console.error('Error creando empresa:', error);
     res.status(500).json({ error: 'Error al crear empresa' });
@@ -191,11 +205,38 @@ export const update = async (req: Request, res: Response) => {
       }
     }
 
+    if (req.body.ruc !== undefined) {
+      const rucLimpio = req.body.ruc === null || req.body.ruc === '' ? '' : String(req.body.ruc).replace(/\D/g, '');
+      if (rucLimpio && !/^\d{13}$/.test(rucLimpio)) {
+        return res.status(400).json({ error: 'El RUC debe tener 13 dígitos' });
+      }
+      if (rucLimpio && rucLimpio !== empresa.ruc) {
+        const yaExiste = await prisma.empresas.findFirst({ where: { ruc: rucLimpio } });
+        if (yaExiste) {
+          return res.status(409).json({ error: 'Ya existe una empresa registrada con ese RUC' });
+        }
+      }
+      data.ruc = rucLimpio || null;
+    }
+
     // Campos de moderación solo para staff (admin, gerente, superadmin)
     if (isStaff(req)) {
       if (typeof req.body.verificado === 'boolean') data.verificado = req.body.verificado;
       if (typeof req.body.destacado === 'boolean') data.destacado = req.body.destacado;
       if (req.body.propietario !== undefined) data.propietario = req.body.propietario;
+    }
+
+    // Aprobar / rechazar: solo admin y superadmin
+    if (req.body.estado !== undefined) {
+      const rol = req.user?.roles?.nombre;
+      if (!['admin', 'superadmin'].includes(rol ?? '')) {
+        return res.status(403).json({ error: 'Solo admin o superadmin pueden aprobar empresas' });
+      }
+      const estado = String(req.body.estado);
+      if (!['pendiente', 'aprobada', 'rechazada'].includes(estado)) {
+        return res.status(400).json({ error: 'Estado no válido' });
+      }
+      data.estado = estado;
     }
 
     const updated = await prisma.empresas.update({ where: { id }, data });

@@ -6,6 +6,7 @@ import { notificarUsuario } from '../services/socket.service.js';
 const router = Router();
 router.get('/notificaciones', authenticate, notificacionController.listarMias);
 router.post('/notificaciones/leer-todas', authenticate, notificacionController.marcarTodasLeidas);
+router.post('/notificaciones/:id/leer', authenticate, notificacionController.marcarLeida);
 // POST /api/notificaciones/test — enviar notificación de prueba por WebSocket
 router.post('/notificaciones/test', authenticate, async (req, res) => {
     try {

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarSucursal, isStaff } from '../middlewares/auth.js';
-import { permiteCartillasPorCedula } from '../services/planes.service.js';
+import { permiteCartillas } from '../services/planes.service.js';
 import { generarQRCartilla, verificarQRCartilla } from '../services/qr.service.js';
 import { verificarAccesoSucursal } from './qr.controller.js';
 import { notificarUsuario } from '../services/socket.service.js';
@@ -52,9 +52,7 @@ export const adminGuardar = async (req: Request, res: Response) => {
     if (!(await canGestionarSucursal(req, sucursal))) return res.status(403).json({ error: 'No puedes gestionar esta sucursal' });
 
     if (!isStaff(req)) {
-      const usuario = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-      const cedula = usuario?.cedula ?? '';
-      if (cedula && !(await permiteCartillasPorCedula(cedula))) {
+      if (!(await permiteCartillas(sucursal.empresa_id))) {
         return res.status(403).json({ error: 'Las cartillas solo están disponibles en el plan Premium o superior. Actualiza tu plan.' });
       }
     }

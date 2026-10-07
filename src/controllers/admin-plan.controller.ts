@@ -120,7 +120,23 @@ export const listSuscripciones = async (req: Request, res: Response) => {
         planes: true
       }
     });
-    res.json(suscripciones);
+
+    // El plan va ligado a la empresa; la cédula es solo la del comprador
+    const cedulas = [...new Set(suscripciones.map((s) => s.cedula).filter((c): c is string => !!c))];
+    const clientes = cedulas.length > 0
+      ? await prisma.usuarios.findMany({
+          where: { cedula: { in: cedulas } },
+          select: { cedula: true, nombres: true, apellidos: true }
+        })
+      : [];
+    const porCedula = new Map(clientes.map((u) => [u.cedula, u]));
+
+    res.json(
+      suscripciones.map((s) => ({
+        ...s,
+        cliente: s.cedula ? (porCedula.get(s.cedula) ?? null) : null
+      }))
+    );
   } catch (error) {
     console.error('Error listando suscripciones:', error);
     res.status(500).json({ error: 'Error al listar suscripciones' });
@@ -140,14 +156,7 @@ export const cambiarEstadoSuscripcion = async (req: Request, res: Response) => {
 
     const suscripcion = await prisma.$transaction(async (tx) => {
       if (estado === 'activa') {
-        // Al aprobar: activar la nueva y dejar inactivas las demás de la misma cédula
-        if (existente.cedula) {
-          await tx.suscripciones.updateMany({
-            where: { cedula: existente.cedula, estado: 'activa', id: { not: id } },
-            data: { estado: 'inactiva' }
-          });
-        }
-        // También desactivar las de la misma empresa
+        // Al aprobar: el plan es de la empresa, así que solo se desactivan las otras de ESA empresa
         if (existente.empresa_id) {
           await tx.suscripciones.updateMany({
             where: { empresa_id: existente.empresa_id, estado: 'activa', id: { not: id } },
@@ -159,48 +168,33 @@ export const cambiarEstadoSuscripcion = async (req: Request, res: Response) => {
           data: { estado: 'aprobado' }
         });
 
-        // Si el plan permite destacados, marcar destacado=true en todas las empresas del usuario
+        // Destacado: solo para la empresa de esta suscripción
         const plan = await tx.planes.findUnique({ where: { id: existente.plan_id } });
-        if (plan?.permite_destacados && existente.cedula) {
-          const usuarioEmpresas = await tx.usuario_empresas.findMany({
-            where: { usuarios: { cedula: existente.cedula } },
-            select: { empresa_id: true }
+        if (plan?.permite_destacados && existente.empresa_id) {
+          await tx.empresas.update({
+            where: { id: existente.empresa_id },
+            data: { destacado: true }
           });
-          const empresaIds = usuarioEmpresas.map((ue) => ue.empresa_id);
-          if (empresaIds.length > 0) {
-            await tx.empresas.updateMany({
-              where: { id: { in: empresaIds } },
-              data: { destacado: true }
-            });
-          }
         }
       }
 
-      // Si se cancela/desactiva la suscripción, quitar destacado si no hay otro plan activo que lo permita
-      if (['inactiva', 'cancelada'].includes(estado) && existente.cedula) {
+      // Al cancelar/desactivar: quitar destacado de ESA empresa si ya no tiene plan que lo permita
+      if (['inactiva', 'cancelada'].includes(estado) && existente.empresa_id) {
         const plan = await tx.planes.findUnique({ where: { id: existente.plan_id } });
         if (plan?.permite_destacados) {
-          const usuarioEmpresas = await tx.usuario_empresas.findMany({
-            where: { usuarios: { cedula: existente.cedula } },
-            select: { empresa_id: true }
-          });
-          const empresaIds = usuarioEmpresas.map((ue) => ue.empresa_id);
-          if (empresaIds.length > 0) {
-            // Verificar si queda alguna otra suscripción activa que permita destacados
-            const otraActiva = await tx.suscripciones.findFirst({
-              where: {
-                cedula: existente.cedula,
-                estado: 'activa',
-                id: { not: id },
-                planes: { permite_destacados: true }
-              }
-            });
-            if (!otraActiva) {
-              await tx.empresas.updateMany({
-                where: { id: { in: empresaIds } },
-                data: { destacado: false }
-              });
+          const otraActiva = await tx.suscripciones.findFirst({
+            where: {
+              empresa_id: existente.empresa_id,
+              estado: 'activa',
+              id: { not: id },
+              planes: { permite_destacados: true }
             }
+          });
+          if (!otraActiva) {
+            await tx.empresas.update({
+              where: { id: existente.empresa_id },
+              data: { destacado: false }
+            });
           }
         }
       }

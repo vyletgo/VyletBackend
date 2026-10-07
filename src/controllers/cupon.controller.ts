@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarSucursal, isStaff } from '../middlewares/auth.js';
-import { permiteCuponesPorCedula } from '../services/planes.service.js';
+import { permiteCupones } from '../services/planes.service.js';
 import { estadoAbierto } from '../services/horario.service.js';
 
 const parseFecha = (v: unknown): Date | undefined => (v === undefined || v === null || v === '' ? undefined : new Date(String(v)));
@@ -79,9 +79,7 @@ export const adminCreate = async (req: Request, res: Response) => {
     if (!sucursal) return;
 
     if (!isStaff(req)) {
-      const usuario = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-      const cedula = usuario?.cedula ?? '';
-      if (cedula && !(await permiteCuponesPorCedula(cedula))) {
+      if (!(await permiteCupones(sucursal.empresa_id))) {
         return res.status(403).json({ error: 'Los cupones solo estan disponibles en el plan Premium o superior. Actualiza tu plan.' });
       }
     }

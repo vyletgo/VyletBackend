@@ -83,6 +83,25 @@ export const authenticateOpcional = async (req: Request, res: Response, next: Ne
   next();
 };
 
+// Staff por id (sin req): consulta rol principal + multiroles. Usado por servicios/controladores
+// que solo reciben userId (p.ej. verificarAccesoSucursal).
+export const esStaffPorId = async (userId: number): Promise<boolean> => {
+  const usuario = await prisma.usuarios.findUnique({
+    where: { id: userId },
+    select: { rol_id: true, usuario_roles: { select: { rol_id: true } } }
+  });
+  if (!usuario) return false;
+  const rolIds = new Set<number>();
+  if (usuario.rol_id) rolIds.add(usuario.rol_id);
+  usuario.usuario_roles.forEach((r) => rolIds.add(r.rol_id));
+  if (rolIds.size === 0) return false;
+  const roles = await prisma.roles.findMany({
+    where: { id: { in: [...rolIds] } },
+    select: { nombre: true }
+  });
+  return roles.some((r) => STAFF_ROLES.includes(r.nombre));
+};
+
 // ¿El usuario es un empleado activo de alguna empresa? (para decidir gating de sucursales)
 export const esEmpleadoActivo = async (userId: number): Promise<boolean> => {
   const emp = await prisma.empresa_empleados.findFirst({

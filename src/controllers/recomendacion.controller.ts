@@ -37,7 +37,7 @@ async function generarRecomendacionesAuto(opts: {
   const personas = cantidad_personas && cantidad_personas > 0 ? cantidad_personas : 1;
 
   const sucursales = await prisma.sucursales.findMany({
-    where: { activo: true, empresas: { activo: true } },
+    where: { activo: true, empresas: { activo: true, estado: 'aprobada' } },
     select: {
       id: true,
       gratuito: true,

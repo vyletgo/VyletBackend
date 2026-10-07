@@ -6,4 +6,7 @@ router.get('/mis-favoritos', authenticate, favoritoController.listarMios);
 router.get('/sucursales/:id/favorito', authenticate, favoritoController.estado);
 router.post('/sucursales/:id/favorito', authenticate, favoritoController.agregar);
 router.delete('/sucursales/:id/favorito', authenticate, favoritoController.quitar);
+router.get('/eventos/:id/favorito', authenticate, favoritoController.estadoEvento);
+router.post('/eventos/:id/favorito', authenticate, favoritoController.agregarEvento);
+router.delete('/eventos/:id/favorito', authenticate, favoritoController.quitarEvento);
 export default router;

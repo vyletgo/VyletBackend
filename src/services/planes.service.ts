@@ -13,141 +13,56 @@ export const suscripcionActiva = async (empresaId: number) => {
   });
 };
 
-// Suscripción activa por cédula del usuario (vale para todas sus empresas)
-export const suscripcionActivaPorCedula = async (cedula: string) => {
-  const hoy = new Date();
-  return prisma.suscripciones.findFirst({
-    where: { cedula, estado: 'activa', fecha_fin: { gte: hoy } },
-    orderBy: { fecha_fin: 'desc' },
-    include: { planes: true }
-  });
+// Plan efectivo de la empresa. Sin suscripción activa => plan Gratis por defecto.
+export const planEfectivo = async (empresaId: number) => {
+  const sub = await suscripcionActiva(empresaId);
+  if (sub?.planes) return { suscripcion: sub, plan: sub.planes };
+  const gratis = await prisma.planes.findFirst({ where: { id: PLAN_GRATIS_ID } });
+  return { suscripcion: null, plan: gratis };
 };
 
-// Límite de sucursales de una empresa (null = ilimitado). Sin suscripción activa => plan Gratis (1)
+const aLimite = (cantidad: number | null | undefined, defecto: number): number | null => {
+  if (cantidad === null || cantidad === undefined) return defecto;
+  if (cantidad >= 999999) return null;
+  return cantidad;
+};
+
+// Límite de sucursales de una empresa (null = ilimitado). Sin suscripción => plan Gratis (1)
 export const limiteSucursales = async (empresaId: number): Promise<number | null> => {
-  const sub = await suscripcionActiva(empresaId);
-  const cantidad = sub?.planes?.cantidad_sucursales ?? 1;
-  if (cantidad === null || cantidad >= 999999) return null;
-  return cantidad;
+  const { plan } = await planEfectivo(empresaId);
+  return aLimite(plan?.cantidad_sucursales, 1);
 };
 
-// Límite de sucursales por cédula (aplica a todas las empresas del usuario)
-export const limiteSucursalesPorCedula = async (cedula: string): Promise<number | null> => {
-  const sub = await suscripcionActivaPorCedula(cedula);
-  const cantidad = sub?.planes?.cantidad_sucursales ?? 1;
-  if (cantidad === null || cantidad >= 999999) return null;
-  return cantidad;
-};
-
-// Límite de productos/servicios de una empresa (null = ilimitado). Sin suscripción activa => plan Gratis (5)
+// Límite de productos/servicios de una empresa (null = ilimitado). Sin suscripción => plan Gratis (5)
 export const limiteProductos = async (empresaId: number): Promise<number | null> => {
-  const sub = await suscripcionActiva(empresaId);
-  const cantidad = sub?.planes?.cantidad_productos ?? 5;
-  if (cantidad === null || cantidad >= 999999) return null;
-  return cantidad;
+  const { plan } = await planEfectivo(empresaId);
+  return aLimite(plan?.cantidad_productos, 5);
 };
 
-// Límite de productos por cédula
-export const limiteProductosPorCedula = async (cedula: string): Promise<number | null> => {
-  const sub = await suscripcionActivaPorCedula(cedula);
-  const cantidad = sub?.planes?.cantidad_productos ?? 5;
-  if (cantidad === null || cantidad >= 999999) return null;
-  return cantidad;
-};
-
-// ¿El plan de la empresa permite crear cupones? Sin suscripción activa => plan Gratis (no)
+// ¿El plan de la empresa permite crear cupones? Sin suscripción => plan Gratis (no)
 export const permiteCupones = async (empresaId: number): Promise<boolean> => {
-  const sub = await suscripcionActiva(empresaId);
-  return sub?.planes?.permite_cupones === true;
+  const { plan } = await planEfectivo(empresaId);
+  return plan?.permite_cupones === true;
 };
 
-// ¿La suscripción por cédula permite cupones?
-export const permiteCuponesPorCedula = async (cedula: string): Promise<boolean> => {
-  const sub = await suscripcionActivaPorCedula(cedula);
-  return sub?.planes?.permite_cupones === true;
+// ¿El plan de la empresa permite cartillas?
+export const permiteCartillas = async (empresaId: number): Promise<boolean> => {
+  const { plan } = await planEfectivo(empresaId);
+  return plan?.permite_cartillas === true;
 };
 
-// ¿La suscripción por cédula permite cartillas?
-export const permiteCartillasPorCedula = async (cedula: string): Promise<boolean> => {
-  const sub = await suscripcionActivaPorCedula(cedula);
-  return sub?.planes?.permite_cartillas === true;
-};
-
-// ¿El plan de la empresa permite reservas? Sin suscripción activa => plan Gratis (no)
+// ¿El plan de la empresa permite reservas? Sin suscripción => plan Gratis (no)
 export const permiteReservas = async (empresaId: number): Promise<boolean> => {
-  const sub = await suscripcionActiva(empresaId);
-  return sub?.planes?.permite_reservas === true;
+  const { plan } = await planEfectivo(empresaId);
+  return plan?.permite_reservas === true;
 };
 
-// ¿La suscripción por cédula permite reservas?
-export const permiteReservasPorCedula = async (cedula: string): Promise<boolean> => {
-  const sub = await suscripcionActivaPorCedula(cedula);
-  return sub?.planes?.permite_reservas === true;
-};
+// ¿La empresa tiene reservas habilitadas por su plan?
+export const empresaTieneReservas = async (empresaId: number): Promise<boolean> =>
+  permiteReservas(empresaId);
 
-// ¿La empresa tiene reservas habilitadas por su plan? (busca por cédula del dueño)
-export const empresaTieneReservas = async (empresaId: number): Promise<boolean> => {
-  const hoy = new Date();
-  // Buscar dueño de la empresa
-  const link = await prisma.usuario_empresas.findFirst({
-    where: { empresa_id: empresaId },
-    select: { usuarios: { select: { cedula: true } } }
-  });
-  const cedula = link?.usuarios?.cedula;
-  if (!cedula) return false;
-  const sub = await prisma.suscripciones.findFirst({
-    where: { cedula, estado: 'activa', fecha_fin: { gte: hoy } },
-    include: { planes: true }
-  });
-  return sub?.planes?.permite_reservas === true;
-};
-
-// ¿El dueño tiene una suscripción activa en alguna de sus empresas?
-export const duenoTienePremium = async (usuarioId: number): Promise<boolean> => {
-  const hoy = new Date();
-  const links = await prisma.usuario_empresas.findMany({
-    where: { usuario_id: usuarioId },
-    select: { empresa_id: true }
-  });
-  const ids = links.map((l) => l.empresa_id);
-  if (ids.length === 0) return false;
-  const sub = await prisma.suscripciones.findFirst({
-    where: { empresa_id: { in: ids }, estado: 'activa', fecha_fin: { gte: hoy } }
-  });
-  return !!sub;
-};
-
-// Cantidad de empresas activas de un dueño (vínculo o propietario por correo)
-export const contarEmpresasDueno = async (usuarioId: number, correo: string): Promise<number> => {
-  return prisma.empresas.count({
-    where: {
-      activo: true,
-      OR: [{ usuario_empresas: { some: { usuario_id: usuarioId } } }, { propietario: correo }]
-    }
-  });
-};
-
-// Where de "empresas de un correo de propietario" (con vínculo de usuario si existe)
-const empresasDeCorreo = async (correo: string) => {
-  const usuario = await prisma.usuarios.findFirst({ where: { correo }, select: { id: true } });
-  return usuario
-    ? { OR: [{ usuario_empresas: { some: { usuario_id: usuario.id } } }, { propietario: correo }] }
-    : { propietario: correo };
-};
-
-// Cantidad de empresas activas de un propietario por correo
-export const contarEmpresasPorCorreo = async (correo: string): Promise<number> => {
-  return prisma.empresas.count({ where: { activo: true, ...(await empresasDeCorreo(correo)) } });
-};
-
-// Límite de empresas de un propietario según sus suscripciones activas (null = ilimitado). Sin suscripción => Gratis (1)
-export const limiteEmpresasPorCorreo = async (correo: string): Promise<number | null> => {
-  const subs = await prisma.suscripciones.findMany({
-    where: { empresas: await empresasDeCorreo(correo), estado: 'activa', fecha_fin: { gte: new Date() } },
-    include: { planes: true }
-  });
-  if (subs.length === 0) return 1;
-  const limites = subs.map((s) => s.planes?.cantidad_empresas ?? 1);
-  if (limites.some((l) => l >= 999999)) return null;
-  return Math.max(...limites);
+// Nombre del plan vigente de una empresa (para mensajes de error)
+export const nombrePlan = async (empresaId: number): Promise<string> => {
+  const { plan } = await planEfectivo(empresaId);
+  return plan?.nombre ?? 'Gratis';
 };

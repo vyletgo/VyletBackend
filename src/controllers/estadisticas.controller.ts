@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
+import { isStaff } from '../middlewares/auth.js';
 
 // GET /api/estadisticas/mias?meses=12&inicio=2025-01-01&fin=2025-12-31&empresa_id=5&sucursal_id=7
 export const misEstadisticas = async (req: Request, res: Response) => {
@@ -19,15 +20,17 @@ export const misEstadisticas = async (req: Request, res: Response) => {
       : new Date(hoy.getFullYear(), hoy.getMonth() - (meses - 1), 1);
     const fechaFin = finQuery ? new Date(finQuery + 'T23:59:59') : hoy;
 
-    // Obtener empresas del usuario
+    // Obtener empresas del usuario (staff: todas)
     const empresas = await prisma.empresas.findMany({
-      where: {
-        activo: true,
-        OR: [
-          { usuario_empresas: { some: { usuario_id: userId } } },
-          { propietario: req.user.correo }
-        ]
-      },
+      where: isStaff(req)
+        ? { activo: true }
+        : {
+            activo: true,
+            OR: [
+              { usuario_empresas: { some: { usuario_id: userId } } },
+              { propietario: req.user.correo }
+            ]
+          },
       select: { id: true, nombre: true }
     });
 
@@ -43,23 +46,27 @@ export const misEstadisticas = async (req: Request, res: Response) => {
       return res.json({ premium: true, empresas: [], resumen: null, mensual: [], sucursales: [], negocios: [] });
     }
 
-    // Verificar plan activo
+    // Plan activo por empresa: cada empresa tiene su propio plan (staff ve todo)
     const subs = await prisma.suscripciones.findMany({
       where: {
         empresa_id: { in: empresaIds },
         estado: 'activa',
         fecha_fin: { gte: new Date() }
       },
-      include: { planes: true }
+      select: { empresa_id: true }
     });
+    const empresasConPlan = new Set(subs.map((s) => s.empresa_id));
+    const empresaIdsVisibles = isStaff(req) ? empresaIds : empresaIds.filter((id) => empresasConPlan.has(id));
 
-    if (subs.length === 0) {
+    if (empresaIdsVisibles.length === 0) {
       return res.json({ premium: false, empresas: [] });
     }
 
+    const empresasVisibles = empresas.filter((e) => empresaIdsVisibles.includes(e.id));
+
     // Sucursales (filtradas por empresa si se especifica)
     const sucursales = await prisma.sucursales.findMany({
-      where: { empresa_id: { in: empresaIds }, activo: true },
+      where: { empresa_id: { in: empresaIdsVisibles }, activo: true },
       select: { id: true, nombre: true, empresa_id: true }
     });
 
@@ -75,7 +82,7 @@ export const misEstadisticas = async (req: Request, res: Response) => {
     const sucIds = sucursales.map((s) => s.id);
 
     if (sucIds.length === 0) {
-      return res.json({ premium: true, empresas, resumen: null, mensual: [], sucursales: [], negocios: [] });
+      return res.json({ premium: true, empresas: empresasVisibles, resumen: null, mensual: [], sucursales: [], negocios: [] });
     }
 
     // Resumen global en el rango seleccionado
@@ -156,7 +163,7 @@ export const misEstadisticas = async (req: Request, res: Response) => {
 
     // Stats por negocio (empresa)
     const negocios = await Promise.all(
-      empresas.filter((e) => empresaIds.includes(e.id)).map(async (emp) => {
+      empresasVisibles.map(async (emp) => {
         const sucEmp = sucursales.filter((s) => s.empresa_id === emp.id);
         const sucEmpIds = sucEmp.map((s) => s.id);
 
@@ -198,7 +205,7 @@ export const misEstadisticas = async (req: Request, res: Response) => {
 
     res.json({
       premium: true,
-      empresas,
+      empresas: empresasVisibles,
       rango: { inicio: fechaInicio.toISOString(), fin: fechaFin.toISOString() },
       resumen: {
         totalVisitas, totalFavoritos, totalResenas,

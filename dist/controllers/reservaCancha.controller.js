@@ -1,16 +1,48 @@
 import { prisma } from '../services/prisma.js';
 import { verificarAccesoSucursal } from '../services/acceso.service.js';
 import { notificarUsuario, enviarWhatsApp } from '../services/socket.service.js';
+// Postgres `time` se mapea a un Date anclado en UTC: 1970-01-01T18:00:00Z significa 18:00.
+// Por eso las horas se construyen y se leen siempre con UTC (independiente de la zona del servidor).
 const timeToDate = (hora) => {
     if (!hora)
         return null;
     const limpia = hora.includes(':') ? hora : `${hora}:00`;
-    return new Date(`1970-01-01T${limpia}`);
+    const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(limpia.trim());
+    if (!m)
+        return null;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (h > 23 || min > 59)
+        return null;
+    return new Date(Date.UTC(1970, 0, 1, h, min));
 };
 const horaStr = (d) => {
     if (!d)
         return null;
-    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toISOString().slice(11, 16);
+};
+const minutos = (d) => {
+    const s = horaStr(d);
+    if (!s)
+        return null;
+    const [h, m] = s.split(':').map(Number);
+    return h * 60 + m;
+};
+// Se compara en minutos desde medianoche para no depender de cómo Postgres serializa `time`.
+const hayConflicto = async (canchaId, fecha, iniMin, finMin) => {
+    const delDia = await prisma.reservas_cancha.findMany({
+        where: { cancha_id: canchaId, fecha_reserva: fecha, estado: { in: ['pendiente', 'confirmada'] } },
+        select: { hora_inicio: true, hora_fin: true, duracion_horas: true }
+    });
+    return delDia.some((r) => {
+        const i = minutos(r.hora_inicio);
+        if (i === null)
+            return false;
+        let f = minutos(r.hora_fin);
+        if (f === null || f <= i)
+            f = i + (r.duracion_horas ?? 1) * 60;
+        return i < finMin && f > iniMin;
+    });
 };
 const serializar = (r) => ({
     ...r,
@@ -20,12 +52,31 @@ const serializar = (r) => ({
 export const disponibilidad = async (req, res) => {
     try {
         const sucursalId = Number(req.params.id);
-        const { fecha } = req.query;
-        if (!fecha)
-            return res.status(400).json({ error: 'fecha es requerida (YYYY-MM-DD)' });
-        const fechaDate = new Date(String(fecha));
-        if (isNaN(fechaDate.getTime()))
-            return res.status(400).json({ error: 'fecha inválida' });
+        const { fecha, desde, hasta } = req.query;
+        const aFecha = (v) => {
+            if (!v)
+                return null;
+            const d = new Date(String(v));
+            return isNaN(d.getTime()) ? null : d;
+        };
+        // Acepta un día (fecha) o un rango (desde/hasta) para poder pintar el calendario completo.
+        let inicio = null;
+        let fin = null;
+        if (desde || hasta) {
+            inicio = aFecha(desde) ?? aFecha(hasta);
+            fin = aFecha(hasta) ?? aFecha(desde);
+        }
+        else if (fecha) {
+            inicio = aFecha(fecha);
+            fin = inicio;
+        }
+        if (!inicio || !fin)
+            return res.status(400).json({ error: 'fecha o desde/hasta es requerido' });
+        if (fin < inicio) {
+            const tmp = inicio;
+            inicio = fin;
+            fin = tmp;
+        }
         const canchas = await prisma.canchas.findMany({
             where: { sucursal_id: sucursalId, activa: true },
             orderBy: { id: 'asc' }
@@ -33,19 +84,44 @@ export const disponibilidad = async (req, res) => {
         const reservadas = await prisma.reservas_cancha.findMany({
             where: {
                 cancha_id: { in: canchas.map((c) => c.id) },
-                fecha_reserva: fechaDate,
+                fecha_reserva: { gte: inicio, lte: fin },
                 estado: { in: ['pendiente', 'confirmada'] }
             },
-            select: { cancha_id: true, hora_inicio: true, hora_fin: true }
+            select: {
+                id: true,
+                cancha_id: true,
+                usuario_id: true,
+                fecha_reserva: true,
+                hora_inicio: true,
+                hora_fin: true,
+                duracion_horas: true
+            },
+            orderBy: [{ fecha_reserva: 'asc' }, { hora_inicio: 'asc' }]
         });
-        const agenda = canchas.map((c) => {
-            const ocupadas = reservadas.filter((r) => r.cancha_id === c.id);
-            return {
-                cancha: { id: c.id, nombre: c.nombre, capacidad: c.capacidad, precio_hora: c.precio_hora, tipo: c.tipo },
-                ocupadas: ocupadas.map((o) => ({ hora_inicio: horaStr(o.hora_inicio), hora_fin: horaStr(o.hora_fin) }))
-            };
+        const iso = (d) => d.toISOString().slice(0, 10);
+        const usuarioId = req.user?.id ?? null;
+        res.json({
+            desde: iso(inicio),
+            hasta: iso(fin),
+            canchas: canchas.map((c) => ({
+                id: c.id,
+                nombre: c.nombre,
+                tipo: c.tipo,
+                capacidad: c.capacidad,
+                precio_hora: c.precio_hora,
+                foto: c.foto
+            })),
+            ocupadas: reservadas.map((r) => ({
+                reserva_id: r.id,
+                cancha_id: r.cancha_id,
+                fecha: iso(r.fecha_reserva),
+                hora_inicio: horaStr(r.hora_inicio),
+                hora_fin: horaStr(r.hora_fin),
+                duracion_horas: r.duracion_horas ?? 1,
+                // Solo el usuario autenticado sabe cuáles son las suyas.
+                es_mia: Boolean(usuarioId && r.usuario_id === usuarioId)
+            }))
         });
-        res.json(agenda);
     }
     catch (error) {
         console.error('Error consultando disponibilidad de canchas:', error);
@@ -71,19 +147,16 @@ export const reservar = async (req, res) => {
         if (!horaInicio)
             return res.status(400).json({ error: 'hora_inicio inválida' });
         const duracion = Number(duracion_horas) || 1;
+        if (!Number.isFinite(duracion) || duracion < 1 || duracion > 12) {
+            return res.status(400).json({ error: 'duracion_horas inválida (entre 1 y 12)' });
+        }
         const horaFin = new Date(horaInicio.getTime() + duracion * 60 * 60 * 1000);
-        const conflicto = await prisma.reservas_cancha.findFirst({
-            where: {
-                cancha_id: Number(cancha_id),
-                fecha_reserva: fechaDate,
-                estado: { in: ['pendiente', 'confirmada'] },
-                AND: [
-                    { hora_inicio: { lt: horaFin } },
-                    { hora_fin: { gt: horaInicio } }
-                ]
-            }
-        });
-        if (conflicto) {
+        const iniMin = minutos(horaInicio) ?? 0;
+        const finMin = minutos(horaFin) ?? 0;
+        if (finMin <= iniMin) {
+            return res.status(400).json({ error: 'El horario debe terminar antes de las 24:00' });
+        }
+        if (await hayConflicto(Number(cancha_id), fechaDate, iniMin, finMin)) {
             return res.status(409).json({ error: 'La cancha no está disponible en ese horario' });
         }
         const usuario = await prisma.usuarios.findUnique({
@@ -173,19 +246,16 @@ export const crearManualReservaCancha = async (req, res) => {
         if (!horaInicio)
             return res.status(400).json({ error: 'hora_inicio inválida' });
         const duracion = Number(duracion_horas) || 1;
+        if (!Number.isFinite(duracion) || duracion < 1 || duracion > 12) {
+            return res.status(400).json({ error: 'duracion_horas inválida (entre 1 y 12)' });
+        }
         const horaFin = new Date(horaInicio.getTime() + duracion * 60 * 60 * 1000);
-        const conflicto = await prisma.reservas_cancha.findFirst({
-            where: {
-                cancha_id: Number(cancha_id),
-                fecha_reserva: fechaDate,
-                estado: { in: ['pendiente', 'confirmada'] },
-                AND: [
-                    { hora_inicio: { lt: horaFin } },
-                    { hora_fin: { gt: horaInicio } }
-                ]
-            }
-        });
-        if (conflicto) {
+        const iniMin = minutos(horaInicio) ?? 0;
+        const finMin = minutos(horaFin) ?? 0;
+        if (finMin <= iniMin) {
+            return res.status(400).json({ error: 'El horario debe terminar antes de las 24:00' });
+        }
+        if (await hayConflicto(Number(cancha_id), fechaDate, iniMin, finMin)) {
             return res.status(409).json({ error: 'La cancha no está disponible en ese horario' });
         }
         const reserva = await prisma.reservas_cancha.create({

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarSucursal, isStaff } from '../middlewares/auth.js';
-import { limiteProductosPorCedula } from '../services/planes.service.js';
+import { limiteProductos } from '../services/planes.service.js';
 
 const includeProducto = {
   categorias_producto: { select: { id: true, nombre: true } },
@@ -102,17 +102,13 @@ export const adminCreate = async (req: Request, res: Response) => {
     data.precio = data.precio ?? 0;
 
     if (!isStaff(req)) {
-      const usuario = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-      const cedula = usuario?.cedula ?? '';
-      if (cedula) {
-        const limite = await limiteProductosPorCedula(cedula);
-        if (limite !== null) {
-          const total = await prisma.productos_servicios.count({ where: { sucursal_id: sucursal.id, activo: true } });
-          if (total >= limite) {
-            return res.status(403).json({
-              error: `Limite de productos y servicios alcanzado (${total} de ${limite}). Actualiza tu plan para crear mas.`
-            });
-          }
+      const limite = await limiteProductos(sucursal.empresa_id);
+      if (limite !== null) {
+        const total = await prisma.productos_servicios.count({ where: { sucursal_id: sucursal.id, activo: true } });
+        if (total >= limite) {
+          return res.status(403).json({
+            error: `Limite de productos y servicios alcanzado (${total} de ${limite}). Actualiza tu plan para crear mas.`
+          });
         }
       }
     }

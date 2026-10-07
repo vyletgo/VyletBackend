@@ -6,6 +6,5 @@ router.get('/sucursales/:id/reservas-visita', authenticateOpcional, visitaContro
 router.post('/sucursales/:id/reservas-visita', authenticate, visitaController.crearReservaVisita);
 router.get('/sucursales/:id/reservas-visita/listado', authenticate, visitaController.listarReservasVisita);
 router.patch('/sucursales/:id/reservas-visita/:reservaId', authenticate, visitaController.actualizarEstadoVisita);
-router.get('/usuarios/mis-reservas-visita', authenticate, visitaController.misReservasVisita);
 router.post('/visitas/sucursal/:id', authenticateOpcional, visitaController.registrarVisita);
 export default router;

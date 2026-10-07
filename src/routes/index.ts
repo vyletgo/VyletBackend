@@ -35,8 +35,6 @@ import compartirRoutes from './compartir.routes.js';
 import pedidoRoutes from './pedido.routes.js';
 import configRoutes from './config.routes.js';
 import interesPlanRoutes from './interesPlan.routes.js';
-import { authenticate } from '../middlewares/auth.js';
-import { obtenerMiPlan, solicitarMiPlan } from '../controllers/plan.controller.js';
 
 const router = Router();
 
@@ -76,9 +74,5 @@ router.use('/', compartirRoutes);
 router.use('/', pedidoRoutes);
 router.use('/', configRoutes);
 router.use('/', interesPlanRoutes);
-
-// Mi plan (ligado a cédula del usuario)
-router.get('/mi-plan', authenticate, obtenerMiPlan);
-router.post('/mi-plan/solicitar', authenticate, solicitarMiPlan);
 
 export default router;

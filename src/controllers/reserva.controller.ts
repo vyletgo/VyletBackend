@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { canGestionarEmpresaConPermiso, canGestionarSucursal, isStaff, sucursalesAsignadasEmpleado } from '../middlewares/auth.js';
-import { permiteReservasPorCedula } from '../services/planes.service.js';
+import { permiteReservas } from '../services/planes.service.js';
 import { estadoAbierto } from '../services/horario.service.js';
 import { crearPedidoDesdeReserva } from './pedido.controller.js';
 
@@ -141,12 +141,8 @@ export const crearReserva = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Esta sucursal no acepta reservas. Solo los restaurantes permiten reservas de mesa.' });
     }
 
-    if (req.user?.id) {
-      const usuarioRes = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-      const cedulaRes = usuarioRes?.cedula ?? '';
-      if (cedulaRes && !(await permiteReservasPorCedula(cedulaRes))) {
-        return res.status(403).json({ error: 'Esta empresa no ofrece reservas. Disponible solo en el plan Premium o superior.' });
-      }
+    if (!(await permiteReservas(sucursal.empresa_id))) {
+      return res.status(403).json({ error: 'Esta empresa no ofrece reservas. Disponible solo en el plan Premium o superior.' });
     }
 
     const {
@@ -214,9 +210,7 @@ export const crearReservaManual = async (req: Request, res: Response) => {
     }
     if (!sucursal.activo) return res.status(400).json({ error: 'La sucursal esta inactiva' });
     if (!isStaff(req)) {
-      const usuarioManual = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-      const cedulaManual = usuarioManual?.cedula ?? '';
-      if (cedulaManual && !(await permiteReservasPorCedula(cedulaManual))) {
+      if (!(await permiteReservas(sucursal.empresa_id))) {
         return res.status(403).json({ error: 'Las reservas solo estan disponibles en el plan Premium o superior. Actualiza tu plan.' });
       }
     }

@@ -2,33 +2,9 @@ import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { generarQRToken, verificarQRToken, generarQRReserva as genQRReserva, verificarQRReserva as verQRReserva, TipoReserva } from '../services/qr.service.js';
 import { notificarUsuario } from '../services/socket.service.js';
-// Verificar que el usuario (dueño o empleado) tiene acceso a la sucursal
-export const verificarAccesoSucursal = async (userId: number, sucursalId: number): Promise<boolean> => {
-  const sucursal = await prisma.sucursales.findUnique({ where: { id: sucursalId }, select: { empresa_id: true } });
-  if (!sucursal) return false;
-
-  // Dueño de la empresa (usuario_empresas)
-  const dueno = await prisma.usuario_empresas.findFirst({
-    where: { usuario_id: userId, empresa_id: sucursal.empresa_id }
-  });
-  if (dueno) return true;
-
-  // Propietario directo de la empresa
-  const empresa = await prisma.empresas.findUnique({ where: { id: sucursal.empresa_id }, select: { propietario: true } });
-  if (empresa?.propietario) {
-    const usuario = await prisma.usuarios.findUnique({ where: { id: userId }, select: { correo: true } });
-    if (usuario?.correo === empresa.propietario) return true;
-  }
-
-  // Empleado asignado a la sucursal
-  const empleado = await prisma.empresa_empleados.findFirst({
-    where: { usuario_id: userId, empresa_id: sucursal.empresa_id, activo: true },
-    include: { empleado_sucursales: { where: { sucursal_id: sucursalId } } }
-  });
-  if (empleado && empleado.empleado_sucursales.length > 0) return true;
-
-  return false;
-};
+// Verificar que el usuario (staff, dueño o empleado) tiene acceso a la sucursal
+export { verificarAccesoSucursal } from '../services/acceso.service.js';
+import { verificarAccesoSucursal } from '../services/acceso.service.js';
 
 // POST /api/cupones/:id/generar-qr  (cliente autenticado)
 export const generarQR = async (req: Request, res: Response) => {
@@ -237,6 +213,20 @@ export const confirmarCanje = async (req: Request, res: Response) => {
 // QR PARA RESERVAS (mesa, habitación, visita)
 // ============================================================
 
+// El QR lo puede generar el dueño de la reserva o alguien a quien se la compartieron
+const puedeGenerarQR = async (reservaId: number, tipo: TipoReserva, usuarioId: number): Promise<boolean> => {
+  const compartida = await prisma.reservas_compartidas.findFirst({
+    where: {
+      reserva_id: reservaId,
+      tipo_reserva: tipo,
+      compartido_con_usuario_id: usuarioId,
+      estado: { not: 'rechazada' },
+    },
+    select: { id: true },
+  });
+  return !!compartida;
+};
+
 // POST /api/reservas/:id/generar-qr  (cliente autenticado)
 export const generarQRReservaCtrl = async (req: Request, res: Response) => {
   try {
@@ -257,7 +247,9 @@ export const generarQRReservaCtrl = async (req: Request, res: Response) => {
         include: { sucursales: { select: { nombre: true } }, mesas: { select: { nombre: true } } }
       });
       if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
-      if (reserva.usuario_id !== usuarioId) return res.status(403).json({ error: 'No autorizado' });
+      if (reserva.usuario_id !== usuarioId && !(await puedeGenerarQR(reservaId, tipo, usuarioId))) {
+        return res.status(403).json({ error: 'No autorizado' });
+      }
       if (reserva.estado === 'cancelada') return res.status(400).json({ error: 'Reserva cancelada' });
       if (reserva.estado === 'completada') return res.status(400).json({ error: 'Reserva ya completada' });
       sucursalNombre = reserva.sucursales?.nombre ?? '';
@@ -267,7 +259,9 @@ export const generarQRReservaCtrl = async (req: Request, res: Response) => {
         include: { habitaciones: { select: { nombre: true, sucursales: { select: { nombre: true } } } } }
       });
       if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
-      if (reserva.usuario_id !== usuarioId) return res.status(403).json({ error: 'No autorizado' });
+      if (reserva.usuario_id !== usuarioId && !(await puedeGenerarQR(reservaId, tipo, usuarioId))) {
+        return res.status(403).json({ error: 'No autorizado' });
+      }
       if (reserva.estado === 'cancelada') return res.status(400).json({ error: 'Reserva cancelada' });
       if (reserva.estado === 'completada') return res.status(400).json({ error: 'Reserva ya completada' });
       sucursalNombre = reserva.habitaciones?.sucursales?.nombre ?? '';
@@ -277,13 +271,15 @@ export const generarQRReservaCtrl = async (req: Request, res: Response) => {
         include: { sucursales: { select: { nombre: true } } }
       });
       if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
-      if (reserva.usuario_id !== usuarioId) return res.status(403).json({ error: 'No autorizado' });
+      if (reserva.usuario_id !== usuarioId && !(await puedeGenerarQR(reservaId, tipo, usuarioId))) {
+        return res.status(403).json({ error: 'No autorizado' });
+      }
       if (reserva.estado === 'cancelada') return res.status(400).json({ error: 'Reserva cancelada' });
       if (reserva.estado === 'completada') return res.status(400).json({ error: 'Reserva ya completada' });
       sucursalNombre = reserva.sucursales?.nombre ?? '';
     }
 
-    const token = genQRReserva(usuarioId, reservaId, tipo);
+    const token = genQRReserva(reserva.usuario_id ?? usuarioId, reservaId, tipo);
 
     res.json({
       token,

@@ -1,5 +1,5 @@
 import { prisma } from '../services/prisma.js';
-import { canGestionarEmpleados } from '../middlewares/auth.js';
+import { canGestionarEmpleados, isStaff } from '../middlewares/auth.js';
 const usuarioSelect = {
     id: true,
     cedula: true,
@@ -276,16 +276,19 @@ export const asignarPermisosEmpleado = async (req, res) => {
         res.status(500).json({ error: 'Error al asignar permisos del empleado' });
     }
 };
-// GET /api/empleados/mios  (dueño/staff: todos los empleados de sus empresas)
+// GET /api/empleados/mios  (staff: todos; dueño: los de sus empresas)
 export const listMine = async (req, res) => {
     try {
-        const empresas = await prisma.empresas.findMany({
-            where: {
+        const filtroEmpresas = isStaff(req)
+            ? {}
+            : {
                 OR: [
                     { usuario_empresas: { some: { usuario_id: req.user.id } } },
                     { propietario: req.user.correo }
                 ]
-            },
+            };
+        const empresas = await prisma.empresas.findMany({
+            where: filtroEmpresas,
             select: { id: true, nombre: true }
         });
         const empresaIds = empresas.map((e) => e.id);

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
-import { canGestionarEmpleados } from '../middlewares/auth.js';
+import { canGestionarEmpleados, isStaff } from '../middlewares/auth.js';
 
 const usuarioSelect = {
   id: true,
@@ -293,16 +293,19 @@ export const asignarPermisosEmpleado = async (req: Request, res: Response) => {
   }
 };
 
-// GET /api/empleados/mios  (dueño/staff: todos los empleados de sus empresas)
+// GET /api/empleados/mios  (staff: todos; dueño: los de sus empresas)
 export const listMine = async (req: Request, res: Response) => {
   try {
+    const filtroEmpresas = isStaff(req)
+      ? {}
+      : {
+          OR: [
+            { usuario_empresas: { some: { usuario_id: req.user.id } } },
+            { propietario: req.user.correo }
+          ]
+        };
     const empresas = await prisma.empresas.findMany({
-      where: {
-        OR: [
-          { usuario_empresas: { some: { usuario_id: req.user.id } } },
-          { propietario: req.user.correo }
-        ]
-      },
+      where: filtroEmpresas,
       select: { id: true, nombre: true }
     });
     const empresaIds = empresas.map((e) => e.id);

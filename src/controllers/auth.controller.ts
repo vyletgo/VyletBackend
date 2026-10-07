@@ -14,6 +14,16 @@ export const register = async (req: Request, res: Response) => {
   try {
     const { nombres, apellidos, correo, telefono, clave, genero, fecha_nacimiento, cedula, tipo } = req.body;
 
+    if (!nombres || !correo || !clave) {
+      return res.status(400).json({ error: 'nombres, correo y clave son requeridos' });
+    }
+    if (typeof correo !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.trim())) {
+      return res.status(400).json({ error: 'El correo no es válido' });
+    }
+    if (String(clave).length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+    }
+
     // Validar que el correo no esté registrado
     const existingUser = await prisma.usuarios.findUnique({
       where: { correo }
@@ -263,8 +273,8 @@ export const resetPassword = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Token y nueva contraseña son requeridos' });
     }
 
-    if (nueva_clave.length < 6) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    if (nueva_clave.length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
     }
 
     const tokenRecord = await prisma.tokens_recuperacion.findUnique({

@@ -5,6 +5,7 @@ const router = Router();
 // Público (restaurantes)
 router.get('/sucursales/:id/mesas', mesa.listarMesas);
 router.get('/sucursales/:id/mesas/disponibilidad', mesa.disponibilidadMesas);
+router.get('/sucursales/:id/mesas/sugerir', mesa.sugerirMesas);
 router.get('/mesa/:token', mesa.resolverMesaPorToken);
 // Gestión (dueño/staff/empleado de la sucursal)
 router.post('/sucursales/:id/mesas', authenticate, requireSucursalAcceso('sucursales:editar'), mesa.crearMesa);

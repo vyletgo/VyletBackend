@@ -34,7 +34,7 @@ const esRestaurante = async (sucursalId) => {
 };
 const serializar = (r) => ({ ...r, hora_inicio: horaStr(r.hora_inicio), hora_fin: horaStr(r.hora_fin) });
 // Valida las mesas seleccionadas y comprueba disponibilidad a esa fecha/hora
-const validarMesas = async (sucursalId, fecha, hora, mesaIds = [], cantidades = []) => {
+const validarMesas = async (sucursalId, fecha, hora, mesaIds = [], cantidades = [], cantidadPersonas) => {
     if (!hora)
         return { error: 'hora_inicio es requerida (HH:MM)', status: 400 };
     if (!mesaIds.length)
@@ -46,6 +46,7 @@ const validarMesas = async (sucursalId, fecha, hora, mesaIds = [], cantidades = 
         return { error: 'Una de las mesas no existe o está inactiva', status: 404 };
     }
     const ocupadas = [];
+    let puestosTotales = 0;
     for (const mesa of mesas) {
         const idx = mesaIds.indexOf(mesa.id);
         const cant = Number(cantidades[idx]) || 1;
@@ -60,13 +61,22 @@ const validarMesas = async (sucursalId, fecha, hora, mesaIds = [], cantidades = 
                 estado: { in: estadosOcupan }
             }
         });
-        if (reservadas + cant > mesa.cantidad)
+        // Regla: misma mesa + misma fecha/hora = ocupada (sin importar unidades)
+        if (reservadas > 0 || cant > mesa.cantidad)
             ocupadas.push(mesa.nombre);
+        puestosTotales += mesa.puestos * cant;
     }
     if (ocupadas.length) {
         return {
-            error: `Las mesas ${ocupadas.join(', ')} no tienen suficientes unidades disponibles a esa hora. Elige otra mesa u hora.`,
+            error: `Las mesas ${ocupadas.join(', ')} ya tienen una reserva a esa fecha y hora. Elige otra mesa u otra hora.`,
             status: 409
+        };
+    }
+    const personas = Number(cantidadPersonas) || 0;
+    if (personas > 0 && puestosTotales < personas) {
+        return {
+            error: `Las mesas elegidas tienen ${puestosTotales} puestos y la reserva es para ${personas} personas. Agrega más mesas o elige otras.`,
+            status: 400
         };
     }
     return { mesas: mesas.map((m) => ({ id: m.id })) };
@@ -92,35 +102,46 @@ const crearReservas = async (data) => {
     }));
     return prisma.$transaction(rows);
 };
-// POST /api/sucursales/:id/reservas  (cliente autenticado; acepta mesa_id o mesa_ids[])
+// POST /api/sucursales/:id/reservas  (cliente; acepta mesa_id o mesa_ids[]; reserva de afuera sin mesa)
 export const crearReserva = async (req, res) => {
     try {
         const sucursalId = Number(req.params.id);
         const sucursal = await prisma.sucursales.findFirst({ where: { id: sucursalId, activo: true } });
         if (!sucursal)
             return res.status(404).json({ error: 'Sucursal no encontrada' });
-        const usuarioRes = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
-        const cedulaRes = usuarioRes?.cedula ?? '';
-        if (cedulaRes && !(await permiteReservasPorCedula(cedulaRes))) {
-            return res.status(403).json({ error: 'Esta empresa no ofrece reservas. Disponible solo en el plan Premium o superior.' });
+        if (!(await esRestaurante(sucursalId))) {
+            return res.status(400).json({ error: 'Esta sucursal no acepta reservas. Solo los restaurantes permiten reservas de mesa.' });
         }
-        const { fecha_reserva, hora_inicio, mesa_id, mesa_ids, cantidades, cantidad_personas, observaciones, platos } = req.body;
+        if (req.user?.id) {
+            const usuarioRes = await prisma.usuarios.findUnique({ where: { id: req.user.id }, select: { cedula: true } });
+            const cedulaRes = usuarioRes?.cedula ?? '';
+            if (cedulaRes && !(await permiteReservasPorCedula(cedulaRes))) {
+                return res.status(403).json({ error: 'Esta empresa no ofrece reservas. Disponible solo en el plan Premium o superior.' });
+            }
+        }
+        const { fecha_reserva, hora_inicio, mesa_id, mesa_ids, cantidades, cantidad_personas, observaciones, platos, cliente_nombre, cliente_telefono, cliente_correo, sin_mesa } = req.body;
         if (!fecha_reserva) {
             return res.status(400).json({ error: 'fecha_reserva es requerida' });
         }
         const fecha = new Date(fecha_reserva);
         if (isNaN(fecha.getTime()))
             return res.status(400).json({ error: 'fecha_reserva inválida' });
+        if (!req.user?.id && !String(cliente_nombre || '').trim()) {
+            return res.status(400).json({ error: 'cliente_nombre es requerido si no inicias sesión' });
+        }
         const restaurante = await esRestaurante(sucursalId);
         let mesaIds;
         let cants = [];
-        if (restaurante) {
-            const ids = mesa_ids?.length ? mesa_ids.map(Number) : mesa_id ? [Number(mesa_id)] : [];
+        const ids = mesa_ids?.length ? mesa_ids.map(Number) : mesa_id ? [Number(mesa_id)] : [];
+        if (restaurante && ids.length) {
             cants = Array.isArray(cantidades) ? cantidades.map(Number) : ids.map(() => (cantidades != null ? Number(cantidades) : 1));
-            const check = await validarMesas(sucursalId, fecha, hora_inicio, ids, cants);
+            const check = await validarMesas(sucursalId, fecha, hora_inicio, ids, cants, cantidad_personas);
             if (check.error)
                 return res.status(check.status ?? 400).json({ error: check.error });
             mesaIds = ids;
+        }
+        else if (restaurante && !sin_mesa && !hora_inicio) {
+            return res.status(400).json({ error: 'hora_inicio es requerida (HH:MM)' });
         }
         const creadas = await crearReservas({
             sucursalId,
@@ -131,7 +152,12 @@ export const crearReserva = async (req, res) => {
             cantidadPersonas: cantidad_personas,
             observaciones,
             platos,
-            usuarioId: req.user.id
+            usuarioId: req.user?.id ?? null,
+            cliente: {
+                nombre: cliente_nombre,
+                telefono: cliente_telefono,
+                correo: cliente_correo
+            }
         });
         res.status(201).json({ reservas: creadas.map(serializar) });
     }
@@ -175,7 +201,7 @@ export const crearReservaManual = async (req, res) => {
         if (restaurante) {
             const ids = mesa_ids?.length ? mesa_ids.map(Number) : mesa_id ? [Number(mesa_id)] : [];
             cants = Array.isArray(cantidades) ? cantidades.map(Number) : ids.map(() => (cantidades != null ? Number(cantidades) : 1));
-            const check = await validarMesas(sucursalId, fecha, hora_inicio, ids, cants);
+            const check = await validarMesas(sucursalId, fecha, hora_inicio, ids, cants, cantidad_personas);
             if (check.error)
                 return res.status(check.status ?? 400).json({ error: check.error });
             mesaIds = ids;
@@ -204,7 +230,7 @@ export const misReservas = async (req, res) => {
     try {
         const reservas = await prisma.reservas.findMany({
             where: { usuario_id: req.user.id },
-            orderBy: { fecha_reserva: 'desc' },
+            orderBy: [{ fecha_creacion: 'desc' }, { id: 'desc' }],
             include: {
                 sucursales: {
                     include: { ciudades: { select: { nombre: true } }, empresas: { select: { id: true, nombre: true } } }
@@ -294,9 +320,16 @@ export const listarReservasSucursal = async (req, res) => {
         if (!(await canGestionarSucursal(req, sucursal))) {
             return res.status(403).json({ error: 'No puedes ver reservas de esta sucursal' });
         }
+        const where = { sucursal_id: sucursalId };
+        const fechaQ = req.query.fecha;
+        if (fechaQ) {
+            const f = new Date(String(fechaQ));
+            if (!isNaN(f.getTime()))
+                where.fecha_reserva = f;
+        }
         const reservas = await prisma.reservas.findMany({
-            where: { sucursal_id: sucursalId },
-            orderBy: { fecha_reserva: 'desc' },
+            where,
+            orderBy: [{ fecha_creacion: 'desc' }, { id: 'desc' }],
             include: {
                 sucursales: { select: { id: true, nombre: true } },
                 usuarios: { select: usuarioSelect },

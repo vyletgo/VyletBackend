@@ -172,7 +172,12 @@ export const update = async (req: Request, res: Response) => {
       data.fecha_nacimiento = req.body.fecha_nacimiento ? new Date(req.body.fecha_nacimiento) : null;
     }
 
-    if (req.body.clave) data.clave = await bcrypt.hash(req.body.clave, 10);
+    if (req.body.clave) {
+      if (String(req.body.clave).length < 8) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+      }
+      data.clave = await bcrypt.hash(req.body.clave, 10);
+    }
 
     if (req.body.rol_id !== undefined && hasPermiso(req, 'roles:asignar')) {
       data.rol_id = Number(req.body.rol_id);
