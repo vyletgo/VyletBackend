@@ -36,7 +36,15 @@ export const listarPublicas = async (req: Request, res: Response) => {
         empresas: {
           select: {
             id: true, nombre: true, logo: true, verificado: true, destacado: true,
-            categorias_negocio: { select: { id: true, nombre: true } }
+            categorias_negocio: {
+              select: {
+                id: true,
+                nombre: true,
+                permite_habitaciones: true,
+                permite_canchas: true,
+                permite_mesas: true
+              }
+            }
           }
         },
         _count: { select: { resenas: true } }

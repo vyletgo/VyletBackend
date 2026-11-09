@@ -27,6 +27,19 @@ model auditoria {
   usuarios       usuarios? @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
+model banners_destacados {
+  id             Int      @id @default(autoincrement())
+  badge          String?  @db.VarChar(60)
+  titulo         String   @db.VarChar(200)
+  descripcion    String?
+  imagen_url     String?  @db.VarChar(500)
+  enlace         String?  @db.VarChar(500)
+  texto_boton    String?  @db.VarChar(40)
+  orden          Int      @default(0)
+  activo         Boolean  @default(true)
+  fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
+}
+
 model categorias_evento {
   id          Int       @id @default(autoincrement())
   nombre      String    @unique @db.VarChar(100)
@@ -381,6 +394,8 @@ model pedidos {
   estado              String?          @default("pendiente") @db.VarChar(30)
   total               Decimal?         @default(0) @db.Decimal(10, 2)
   notas               String?
+  origen              String           @default("qr") @db.VarChar(20)
+  token_cliente       String?          @db.VarChar(64)
   fecha_creacion      DateTime?        @default(now()) @db.Timestamp(6)
   fecha_actualizacion DateTime?        @default(now()) @db.Timestamp(6)
   pedido_detalle      pedido_detalle[]

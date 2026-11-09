@@ -1,8 +1,23 @@
+import { randomBytes } from 'crypto';
 import { Request, Response } from 'express';
 import { prisma } from '../services/prisma.js';
 import { generarQRPedido, verificarQRPedido } from '../services/qr.service.js';
 import { notificarUsuario } from '../services/socket.service.js';
 import { verificarAccesoSucursal } from './qr.controller.js';
+
+const ESTADOS_ACTIVOS = ['pendiente', 'preparando', 'listo'];
+const LIMITE_AGREGAR_HORAS = 4;
+
+class HttpError extends Error {
+  status: number;
+  extra?: Record<string, unknown>;
+
+  constructor(status: number, message: string, extra?: Record<string, unknown>) {
+    super(message);
+    this.status = status;
+    this.extra = extra;
+  }
+}
 
 // Crea un pedido a partir de los platos (texto "2x Ceviche, 1x Jugo") de una
 // reserva confirmada. Idempotente: si ya existe pedido para la reserva, lo devuelve.
@@ -71,6 +86,7 @@ export const crearPedidoDesdeReserva = async (reservaId: number): Promise<number
         estado: 'pendiente',
         total,
         notas: notasExtras || null,
+        origen: 'reserva',
         pedido_detalle: { create: detalle }
       }
     });
@@ -101,6 +117,7 @@ const formatearPedido = (p: any) => ({
   id: p.id,
   sucursal_id: p.sucursal_id,
   sucursal: p.sucursales?.nombre ?? null,
+  origen: p.origen ?? 'qr',
   mesa_id: p.mesa_id,
   mesa: p.mesas?.nombre ?? null,
   reserva_id: p.reserva_id,
@@ -136,6 +153,54 @@ const formatearPedido = (p: any) => ({
     estado: d.estado
   }))
 });
+
+// Avisa al local (dueños + empleados asignados a la sucursal) por notificación y WebSocket
+const notificarLocal = async (
+  sucursal: { id: number; empresa_id: number; nombre: string },
+  pedido: { id: number; total: unknown },
+  mesaNombre: string | null,
+  itemsNuevos: number,
+  agregado: boolean
+) => {
+  try {
+    const duenos = await prisma.usuario_empresas.findMany({
+      where: { empresa_id: sucursal.empresa_id },
+      select: { usuario_id: true }
+    });
+    const empleados = await prisma.empresa_empleados.findMany({
+      where: {
+        empresa_id: sucursal.empresa_id,
+        activo: true,
+        empleado_sucursales: { some: { sucursal_id: sucursal.id } }
+      },
+      select: { usuario_id: true }
+    });
+    const destinos = [...new Set([...duenos, ...empleados].map((d) => d.usuario_id))];
+    if (destinos.length === 0) return;
+
+    const mesaTxt = mesaNombre ?? 'Sin mesa';
+    const titulo = agregado ? 'Se agregaron productos' : 'Nuevo pedido en mesa';
+    const mensaje = agregado
+      ? `Pedido #${pedido.id} · ${mesaTxt} · ${itemsNuevos} ${itemsNuevos === 1 ? 'ítem nuevo' : 'ítems nuevos'} · $${Number(pedido.total ?? 0).toFixed(2)}`
+      : `Pedido #${pedido.id} en ${sucursal.nombre} · ${mesaTxt} por $${Number(pedido.total ?? 0).toFixed(2)}`;
+    const tipo = agregado ? 'pedido_agregado' : 'nuevo_pedido';
+
+    for (const usuarioId of destinos) {
+      const notif = await prisma.notificaciones.create({
+        data: {
+          usuario_id: usuarioId,
+          tipo,
+          titulo,
+          mensaje,
+          enlace: `/admin/sucursales/${sucursal.id}/pedidos`
+        }
+      });
+      notificarUsuario(usuarioId, { tipo, notificacion: notif });
+    }
+  } catch (e) {
+    console.error('Error notificando pedido:', e);
+  }
+};
 
 // GET /api/sucursales/:id/pedidos?estado=pendiente  (dueño/staff/empleado)
 export const listarPedidos = async (req: Request, res: Response) => {
@@ -173,10 +238,15 @@ export const obtenerPedido = async (req: Request, res: Response) => {
 
 // POST /api/sucursales/:id/pedidos  (público; usuario opcional)
 // body: { mesa_token?, mesa_id?, reserva_id?, cliente_nombre?, cliente_telefono?, notas?, items: [{ producto_id, cantidad, nota? }] }
+// Si la mesa ya tiene un pedido abierto y llega pedido_id + token_cliente (dispositivo creador),
+// los ítems se agregan a ese pedido en vez de crear otro.
 export const crearPedido = async (req: Request, res: Response) => {
   try {
     const sucursalId = Number(req.params.id);
-    const { mesa_token, mesa_id, reserva_id, cliente_nombre, cliente_telefono, notas, items } = req.body ?? {};
+    const {
+      mesa_token, mesa_id, reserva_id, cliente_nombre, cliente_telefono, notas, items,
+      pedido_id, token_cliente
+    } = req.body ?? {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'El pedido debe tener al menos un producto' });
@@ -191,16 +261,19 @@ export const crearPedido = async (req: Request, res: Response) => {
 
     // Validar mesa (por token preferido, o por id)
     let mesaId: number | null = null;
+    let mesaNombre: string | null = null;
     if (mesa_token) {
       const mesa = await prisma.mesas.findUnique({ where: { qr_token: String(mesa_token) } });
       if (!mesa || mesa.sucursal_id !== sucursalId || !mesa.activa) {
         return res.status(400).json({ error: 'Mesa inválida' });
       }
       mesaId = mesa.id;
+      mesaNombre = mesa.nombre;
     } else if (mesa_id) {
       const mesa = await prisma.mesas.findFirst({ where: { id: Number(mesa_id), sucursal_id: sucursalId, activa: true } });
       if (!mesa) return res.status(400).json({ error: 'Mesa inválida' });
       mesaId = mesa.id;
+      mesaNombre = mesa.nombre;
     }
 
     // Validar reserva opcional; si no se indica y la mesa tiene reserva hoy, vincularla
@@ -256,46 +329,120 @@ export const crearPedido = async (req: Request, res: Response) => {
     const total = detalle.reduce((s, d) => s + d.precio_unitario * d.cantidad, 0);
     const usuarioId = (req as any).user?.id ?? null;
 
-    const pedido = await prisma.pedidos.create({
-      data: {
-        sucursal_id: sucursalId,
-        mesa_id: mesaId,
-        reserva_id: reservaId,
-        usuario_id: usuarioId,
-        cliente_nombre: cliente_nombre ? String(cliente_nombre).slice(0, 200) : null,
-        cliente_telefono: cliente_telefono ? String(cliente_telefono).slice(0, 30) : null,
-        notas: notas ? String(notas).slice(0, 1000) : null,
-        estado: 'pendiente',
-        total,
-        pedido_detalle: { create: detalle }
-      },
-      include: pedidoInclude
-    });
+    const resultado = await prisma.$transaction(async (tx) => {
+      // Serializa pedidos concurrentes de la misma mesa
+      if (mesaId) {
+        await tx.$queryRaw`SELECT id FROM mesas WHERE id = ${mesaId} FOR UPDATE`;
+      }
 
-    res.status(201).json(formatearPedido(pedido));
+      const activo = mesaId
+        ? await tx.pedidos.findFirst({
+            where: { mesa_id: mesaId, origen: 'qr', estado: { in: ESTADOS_ACTIVOS } },
+            orderBy: { id: 'desc' }
+          })
+        : null;
 
-    // Notificar a los dueños de la empresa por WebSocket (no bloquea respuesta)
-    try {
-      const duenos = await prisma.usuario_empresas.findMany({
-        where: { empresa_id: sucursal.empresa_id },
-        select: { usuario_id: true }
-      });
-      for (const d of duenos) {
-        const notif = await prisma.notificaciones.create({
+      const ahora = new Date();
+      const ultimaActividad = (p: { fecha_actualizacion: Date | null; fecha_creacion: Date | null }) =>
+        new Date(p.fecha_actualizacion ?? p.fecha_creacion ?? 0);
+      const dentroDelLimite = (fecha: Date) => ahora.getTime() - fecha.getTime() < LIMITE_AGREGAR_HORAS * 3600000;
+
+      // 1) Agregar ítems a un pedido existente (solo el dispositivo creador)
+      if (pedido_id && token_cliente) {
+        const pedido = await tx.pedidos.findUnique({ where: { id: Number(pedido_id) } });
+        if (!pedido || !mesaId || pedido.mesa_id !== mesaId || pedido.sucursal_id !== sucursalId || pedido.origen !== 'qr') {
+          throw new HttpError(400, 'Pedido inválido');
+        }
+        if (pedido.token_cliente !== String(token_cliente)) {
+          throw new HttpError(403, 'No autorizado para modificar este pedido');
+        }
+        if (pedido.estado === 'cancelado') {
+          throw new HttpError(409, 'El pedido fue cancelado por el local', { codigo: 'PEDIDO_CANCELADO' });
+        }
+        if (pedido.estado === 'entregado') {
+          throw new HttpError(409, 'El pedido ya fue entregado y no admite cambios', { codigo: 'PEDIDO_CERRADO' });
+        }
+        if (!dentroDelLimite(ultimaActividad(pedido))) {
+          throw new HttpError(409, 'El tiempo para agregar a este pedido expiró', { codigo: 'PEDIDO_EXPIRADO' });
+        }
+        if (activo && activo.id !== pedido.id) {
+          throw new HttpError(409, 'La mesa ya tiene otro pedido en curso', {
+            codigo: 'MESA_OCUPADA',
+            pedido_id: activo.id,
+            estado: activo.estado
+          });
+        }
+
+        await tx.pedido_detalle.createMany({
+          data: detalle.map((d) => ({ pedido_id: pedido.id, ...d }))
+        });
+
+        const renglones = await tx.pedido_detalle.findMany({
+          where: { pedido_id: pedido.id },
+          select: { cantidad: true, precio_unitario: true }
+        });
+        const totalFinal = renglones.reduce((s, d) => s + Number(d.precio_unitario) * d.cantidad, 0);
+
+        const actualizado = await tx.pedidos.update({
+          where: { id: pedido.id },
+          data: { estado: 'pendiente', total: totalFinal, fecha_actualizacion: ahora },
+          include: pedidoInclude
+        });
+        return { pedido: actualizado, agregado: true, itemsNuevos: detalle.length };
+      }
+
+      // 2) Crear pedido nuevo (la mesa debe estar libre)
+      if (activo) {
+        if (dentroDelLimite(ultimaActividad(activo))) {
+          throw new HttpError(409, 'Esta mesa ya tiene un pedido en curso', {
+            codigo: 'MESA_OCUPADA',
+            pedido_id: activo.id,
+            estado: activo.estado
+          });
+        }
+        await tx.pedidos.update({
+          where: { id: activo.id },
           data: {
-            usuario_id: d.usuario_id,
-            tipo: 'nuevo_pedido',
-            titulo: 'Nuevo pedido en mesa',
-            mensaje: `Pedido #${pedido.id} en ${sucursal.nombre}${mesaId ? '' : ''} por $${Number(total).toFixed(2)}`,
-            enlace: `/admin/sucursales/${sucursalId}/pedidos`
+            estado: 'cancelado',
+            fecha_actualizacion: ahora,
+            notas: [activo.notas, 'Cancelado automáticamente por inactividad (4 h)'].filter(Boolean).join(' | ')
           }
         });
-        notificarUsuario(d.usuario_id, { tipo: 'nuevo_pedido', notificacion: notif });
       }
-    } catch (e) {
-      console.error('Error notificando nuevo pedido:', e);
-    }
+
+      const pedido = await tx.pedidos.create({
+        data: {
+          sucursal_id: sucursalId,
+          mesa_id: mesaId,
+          reserva_id: reservaId,
+          usuario_id: usuarioId,
+          cliente_nombre: cliente_nombre ? String(cliente_nombre).slice(0, 200) : null,
+          cliente_telefono: cliente_telefono ? String(cliente_telefono).slice(0, 30) : null,
+          notas: notas ? String(notas).slice(0, 1000) : null,
+          origen: 'qr',
+          token_cliente: mesaId ? randomBytes(16).toString('hex') : null,
+          estado: 'pendiente',
+          total,
+          pedido_detalle: { create: detalle }
+        },
+        include: pedidoInclude
+      });
+      return { pedido, agregado: false, itemsNuevos: detalle.length };
+    });
+
+    const { pedido, agregado, itemsNuevos } = resultado;
+    res.status(agregado ? 200 : 201).json({
+      ...formatearPedido(pedido),
+      agregado,
+      token_cliente: pedido.token_cliente ?? null
+    });
+
+    // Notificar al local (dueños + empleados asignados a la sucursal)
+    await notificarLocal(sucursal, pedido, mesaNombre, itemsNuevos, agregado);
   } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.status).json({ error: error.message, ...(error.extra ?? {}) });
+    }
     console.error('Error creando pedido:', error);
     res.status(500).json({ error: 'Error al crear el pedido' });
   }

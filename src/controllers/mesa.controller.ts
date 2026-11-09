@@ -343,6 +343,16 @@ export const resolverMesaPorToken = async (req: Request, res: Response) => {
     if (!mesa || !mesa.activa || !mesa.sucursales?.activo) {
       return res.status(404).json({ error: 'Mesa no encontrada' });
     }
+
+    // Pedido abierto de la mesa (solo QR). Los de más de 4 h sin actividad no bloquean.
+    const pedido = await prisma.pedidos.findFirst({
+      where: { mesa_id: mesa.id, origen: 'qr', estado: { in: ['pendiente', 'preparando', 'listo'] } },
+      orderBy: { id: 'desc' },
+      select: { id: true, estado: true, total: true, fecha_creacion: true, fecha_actualizacion: true }
+    });
+    const ultima = pedido ? new Date(pedido.fecha_actualizacion ?? pedido.fecha_creacion ?? 0) : null;
+    const vigente = Boolean(pedido && ultima && Date.now() - ultima.getTime() < 4 * 3600 * 1000);
+
     res.json({
       mesa: { id: mesa.id, nombre: mesa.nombre, puestos: mesa.puestos },
       sucursal: {
@@ -354,7 +364,15 @@ export const resolverMesaPorToken = async (req: Request, res: Response) => {
         whatsapp: mesa.sucursales.whatsapp,
         empresa: mesa.sucursales.empresas?.nombre ?? null,
         logo: mesa.sucursales.empresas?.logo ?? null
-      }
+      },
+      pedido_activo: vigente && pedido
+        ? {
+            id: pedido.id,
+            estado: pedido.estado,
+            total: Number(pedido.total ?? 0),
+            fecha_creacion: pedido.fecha_creacion
+          }
+        : null
     });
   } catch (error) {
     console.error('Error resolviendo mesa:', error);
